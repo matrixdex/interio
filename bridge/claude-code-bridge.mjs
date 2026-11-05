@@ -49,11 +49,11 @@ const apiError = (res, status, type, message) => sendJSON(res, status, { type: '
 const readBody = req => new Promise((ok, bad) => { let s = ''; req.on('data', c => { s += c; if (s.length > 5e6) bad(new Error('too large')); }); req.on('end', () => ok(s)); req.on('error', bad); });
 const textOf = c => typeof c === 'string' ? c : (c || []).filter(b => b.type === 'text').map(b => b.text).join('\n\n');
 
-let busy = false;
+let current = null; // the running `claude` process (one at a time; a new request replaces an abandoned one)
 async function handleMessages(req, res) {
   let body;
   try { body = JSON.parse(await readBody(req)); } catch { return apiError(res, 400, 'invalid_request_error', 'Body is not JSON.'); }
-  if (busy) return apiError(res, 429, 'rate_limit_error', 'The bridge is already working on a design — wait for it to finish.');
+  if (current) { console.log('[bridge] new request — stopping the previous one'); current.replaced = true; current.kill('SIGTERM'); current = null; }
   const system = textOf(body.system), user = (body.messages || []).filter(m => m.role === 'user').map(m => textOf(m.content)).join('\n\n');
   const schema = body.output_config && body.output_config.format && body.output_config.format.schema;
   const effort = body.output_config && body.output_config.effort;
@@ -74,10 +74,11 @@ async function handleMessages(req, res) {
   ev('message_start', { message: { id, type: 'message', role: 'assistant', model: body.model || 'claude-code', content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: 0, output_tokens: 0 } } });
   const ping = setInterval(() => res.write(': working\n\n'), 10000);
 
-  busy = true; const t0 = Date.now(); let lineBuf = '', result = null, stderr = '';
+  const t0 = Date.now(); let lineBuf = '', result = null, stderr = '';
   console.log(`[bridge] ${new Date().toLocaleTimeString()} request · model ${model || "Claude Code's default"} · effort ${effort || 'default'} · schema ${schema ? 'yes' : 'no'}`);
-  const child = spawn(CLAUDE, args, { cwd: dir, stdio: ['pipe', 'pipe', 'pipe'], env: process.env });
-  req.on('close', () => { if (!res.writableEnded) { child.kill('SIGTERM'); console.log('[bridge] client disconnected — cancelled'); } });
+  const child = spawn(CLAUDE, args, { cwd: dir, stdio: ['pipe', 'pipe', 'pipe'], env: process.env }); current = child;
+  // the app cancelled, the page reloaded or the tab closed: stop Claude Code so it doesn't keep running
+  res.on('close', () => { if (!res.writableFinished && child.exitCode === null) { child.kill('SIGTERM'); console.log('[bridge] app disconnected — stopped Claude Code'); } });
   child.stdout.on('data', chunk => {
     lineBuf += chunk; let i;
     while ((i = lineBuf.indexOf('\n')) >= 0) {
@@ -90,12 +91,14 @@ async function handleMessages(req, res) {
   child.on('error', e => { stderr += e.message; });
   child.stdin.end(user);
   child.on('close', code => {
-    clearInterval(ping); busy = false; rmSync(dir, { recursive: true, force: true });
+    clearInterval(ping); if (current === child) current = null; rmSync(dir, { recursive: true, force: true });
     if (res.writableEnded) return;
     const secs = ((Date.now() - t0) / 1000).toFixed(0);
     if (!result || result.is_error || result.subtype !== 'success') {
+      if (child.replaced) { ev('error', { error: { type: 'api_error', message: 'Stopped: a newer request from the app replaced this one.' } }); return res.end(); }
       let msg = (result && (result.result || result.subtype)) || stderr.trim().split('\n').pop() || `claude exited with code ${code}`;
-      if (/model/i.test(msg) && /(not found|not available|invalid|access|support)/i.test(msg)) msg += ` — your Claude Code can't use ${model || 'that model'}. Pick another model in the app, or restart the bridge with --model opus (or the newest model you have).`;
+      if (/usage limit|rate limit|limit reached|too many requests/i.test(msg)) msg += ' — this is your Claude plan\'s usage limit; try again after it resets, or use a smaller model / lower effort.';
+      else if (/model/i.test(msg) && /(not found|not available|invalid|access|support)/i.test(msg)) msg += ` — your Claude Code can't use ${model || 'that model'}. Pick another model in the app, or restart the bridge with --model opus (or the newest model you have).`;
       console.log(`[bridge] failed after ${secs}s: ${msg}`);
       ev('error', { error: { type: 'api_error', message: `Claude Code: ${msg}` } }); return res.end();
     }
@@ -116,7 +119,7 @@ http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') { res.writeHead(204); return res.end(); }
   const path = new URL(req.url, 'http://x').pathname;
   if (req.method === 'GET' && path.startsWith('/v1/models')) { const m = decodeURIComponent(path.split('/')[3] || 'claude-code'); return sendJSON(res, 200, { id: m, type: 'model', display_name: `${m} via Claude Code`, created_at: new Date().toISOString() }); }
-  if (req.method === 'POST' && path === '/v1/messages') return handleMessages(req, res).catch(e => { busy = false; if (!res.headersSent) apiError(res, 500, 'api_error', e.message); else res.end(); });
+  if (req.method === 'POST' && path === '/v1/messages') return handleMessages(req, res).catch(e => { if (!res.headersSent) apiError(res, 500, 'api_error', e.message); else res.end(); });
   apiError(res, 404, 'not_found_error', 'Only POST /v1/messages and GET /v1/models are bridged.');
 }).listen(PORT, '127.0.0.1', () => {
   console.log(`Interio ↔ Claude Code bridge on http://127.0.0.1:${PORT}`);

@@ -1838,10 +1838,17 @@ function drawHero() {
    Only the catalogue (products, options, finishes, prices) and the physics of placement are deterministic.
    Claude returns a design spec (JSON, schema-constrained); realizeDesign() turns it into a room + placed units,
    nudging small overlaps and reporting anything it couldn't place. Users then edit by hand or ask Claude for changes. */
-const AI_MODELS = [['claude-opus-5-5', 'Claude Opus 5.5 — best layouts'], ['claude-sonnet-5-5', 'Claude Sonnet 5.5 — faster'], ['claude-haiku-5-5', 'Claude Haiku 5.5 — fastest, cheapest'], ['claude-opus-4-7', 'Claude Opus 4.7'], ['default', "Claude Code's default model (bridge only)"]];
+/* Models newer than Claude Opus 4.7 / Claude Sonnet 5 are listed but disabled: they need a newer Claude Code than this
+   setup can run (Opus 5.5 needs Claude Code 2.1.280+). Flip `enabled` when that changes. */
+const AI_MODELS = [
+  ['claude-opus-4-7', 'Claude Opus 4.7 — best available here', true], ['claude-sonnet-5', 'Claude Sonnet 5 — faster', true], ['default', "Claude Code's default model (bridge only)", true],
+  ['claude-fable-5-1', 'Claude Fable 5.1', false], ['claude-opus-5-5', 'Claude Opus 5.5', false], ['claude-opus-5', 'Claude Opus 5', false], ['claude-opus-4-8', 'Claude Opus 4.8', false], ['claude-sonnet-5-5', 'Claude Sonnet 5.5', false], ['claude-haiku-5-5', 'Claude Haiku 5.5', false]
+];
+const modelOK = id => AI_MODELS.some(([m, , on]) => m === id && on);
 const FALLBACK_MODELS = ['claude-opus-5-5', 'claude-sonnet-5-5']; // models that accept fallbacks: "default"
 const AI_EFFORTS = [['low', 'Low'], ['medium', 'Medium'], ['high', 'High'], ['xhigh', 'Extra high']];
-const AI = { cfg: Object.assign({ mode: '', key: '', proxy: '', model: 'claude-opus-5-5', effort: 'high' }, store.get('ai', {})), ctrl: null, busy: false, sys: null, schemas: null };
+const AI = { cfg: Object.assign({ mode: '', key: '', proxy: '', model: 'claude-opus-4-7', effort: 'medium' }, store.get('ai', {})), ctrl: null, busy: false, sys: null, schemas: null };
+if (!modelOK(AI.cfg.model)) AI.cfg.model = 'claude-opus-4-7'; // a saved model that is no longer selectable
 /* three ways to reach Claude: 'api' (your API key), 'bridge' (local Claude Code bridge or a key-holding proxy), 'manual' (copy & paste with any Claude chat) */
 const aiMode = () => AI.cfg.mode || (AI.cfg.proxy ? 'bridge' : AI.cfg.key ? 'api' : '');
 const aiReady = () => aiMode() === 'manual' || (aiMode() === 'bridge' && !!AI.cfg.proxy) || (aiMode() === 'api' && !!AI.cfg.key);
@@ -1857,7 +1864,8 @@ function aiErrorText(e) {
   if (A.AuthenticationError && e instanceof A.AuthenticationError) return 'Claude rejected the API key — check it in AI settings.';
   if (A.PermissionDeniedError && e instanceof A.PermissionDeniedError) return "This key doesn't have access to that model — pick another in AI settings.";
   if (A.NotFoundError && e instanceof A.NotFoundError) return 'Model not found — pick another model in AI settings.';
-  if (A.RateLimitError && e instanceof A.RateLimitError) return 'Rate limited — wait a moment and try again.';
+  if (aiMode() === 'bridge' && A.APIError && e instanceof A.APIError && e.message) return e.message.replace(/^\d{3}\s+/, '').replace(/^\{.*"message":"([^"]+)".*$/, '$1');
+  if (A.RateLimitError && e instanceof A.RateLimitError) return 'Rate limited by the Claude API — wait a moment and try again.';
   if (A.BadRequestError && e instanceof A.BadRequestError) return 'Claude rejected the request: ' + e.message;
   if (A.APIConnectionError && e instanceof A.APIConnectionError) return "Couldn't reach Claude — check your internet connection or proxy URL.";
   if (A.APIError && e instanceof A.APIError) return `Claude API error ${e.status ?? ''}: ${e.message}`;
@@ -2099,7 +2107,8 @@ function showAISettings(onSaved) {
   const c = Object.assign({}, AI.cfg, { mode: aiMode() || 'bridge' }), msg = h('p', { class: 'ai-msg', role: 'status' });
   const key = h('input', { type: 'password', class: 'field', value: c.key, placeholder: 'sk-ant-…', autocomplete: 'off', 'aria-label': 'Anthropic API key' });
   const proxy = h('input', { type: 'url', class: 'field', value: c.proxy || 'http://127.0.0.1:8787', 'aria-label': 'Bridge or proxy URL' });
-  const model = h('select', { class: 'field', 'aria-label': 'Model' }, AI_MODELS.map(([id, n]) => h('option', { value: id, selected: id === c.model }, n)));
+  const model = h('select', { class: 'field', 'aria-label': 'Model' }, h('optgroup', { label: 'Available' }, AI_MODELS.filter(m => m[2]).map(([id, n]) => h('option', { value: id, selected: id === c.model }, n))),
+    h('optgroup', { label: 'Needs a newer Claude Code' }, AI_MODELS.filter(m => !m[2]).map(([id, n]) => h('option', { value: id, disabled: true, title: 'Not available with your Claude Code version' }, n + ' — unavailable'))));
   const effort = h('select', { class: 'field', 'aria-label': 'Effort' }, AI_EFFORTS.map(([id, n]) => h('option', { value: id, selected: id === c.effort }, n)));
   const read = () => ({ mode: c.mode, key: key.value.trim(), proxy: proxy.value.trim(), model: model.value, effort: effort.value });
   const panes = {
@@ -2159,7 +2168,7 @@ function renderBrief() {
     h('label', { class: 'lab' }, 'Doors and windows', h('input', { class: 'field', value: b.openings, placeholder: 'e.g. door on the south wall near the corner, window on the north wall', oninput: e => { b.openings = e.target.value; save(); } })),
     h('label', { class: 'lab' }, 'Anything else', h('textarea', { class: 'field', rows: 2, placeholder: 'e.g. mother-in-law is short — keep wall cabinets reachable; we make rotis daily', oninput: e => { b.extra = e.target.value; save(); } }, b.extra)),
     h('div', { class: 'brief-go' }, h('button', { class: 'pill-btn primary big', onclick: () => generateProposals(b) }, h('span', { html: ico('edit', 20) }), aiReady() ? `Generate ${b.count} design${b.count > 1 ? 's' : ''}` : 'Connect Claude to generate'),
-      h('button', { class: 'pill-btn', onclick: () => showAISettings(renderBrief) }, 'AI settings'), h('span', { class: 'muted', style: 'font-size:13px' }, (aiReady() ? `${AI_MODE_NAME[aiMode()]} · ${AI_MODELS.find(m => m[0] === AI.cfg.model)[1].split(' — ')[0]}` : 'Not connected yet'))),
+      h('button', { class: 'pill-btn', onclick: () => showAISettings(renderBrief) }, 'AI settings'), h('span', { class: 'muted', style: 'font-size:13px' }, (aiReady() ? `${AI_MODE_NAME[aiMode()]} · ${(AI_MODELS.find(m => m[0] === AI.cfg.model) || ['', AI.cfg.model])[1].split(' — ')[0]}` : 'Not connected yet'))),
     status));
 }
 async function generateProposals(b) {
