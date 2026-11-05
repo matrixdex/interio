@@ -867,6 +867,8 @@ function fmtLen(m) {
 const fmtCm = cm => S.units === 'm' ? `${Math.round(cm)} cm` : `${Math.round(cm / 2.54)}"`;
 
 /* ═══════════════ 6c · picking, dragging, orbit ═══════════════ */
+/* Zoom sensitivity — lower numbers = gentler. pinch/wheel are per-unit-of-delta gains, caps limit one event, gesture is an exponent on Safari's scale ratio. */
+const ZOOM_SENS = { pinch: .0012, pinchCap: 20, wheel: .0007, wheelCap: 40, gesture: .35 };
 function setNDC(e) {
   const r = GL.renderer.domElement.getBoundingClientRect();
   GL.ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
@@ -934,12 +936,18 @@ function bindCanvas() {
   cv.addEventListener('contextmenu', e => e.preventDefault());
   cv.addEventListener('wheel', e => {
     e.preventDefault();
-    // Trackpad pinch arrives as many small wheel events with ctrlKey set; a mouse wheel notch is one big event.
-    // Scale zoom by the actual delta (and damp it) instead of a fixed step per event.
+    // Trackpad pinch = many small wheel events with ctrlKey set; a mouse wheel notch = one big event.
+    // Zoom by the actual delta, damped, and cap what a single event can do so fast pinches stay controllable.
     const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1;
-    const dy = clamp(e.deltaY * unit, -60, 60), k = e.ctrlKey ? .0045 : .0012;
-    zoomScale(Math.exp(dy * k));
+    const pinch = e.ctrlKey, cap = pinch ? ZOOM_SENS.pinchCap : ZOOM_SENS.wheelCap;
+    const dy = clamp(e.deltaY * unit, -cap, cap);
+    zoomScale(Math.exp(dy * (pinch ? ZOOM_SENS.pinch : ZOOM_SENS.wheel)));
   }, { passive: false });
+  // Safari reports trackpad pinch as gesture events instead of wheel events
+  let gScale = 1;
+  cv.addEventListener('gesturestart', e => { e.preventDefault(); gScale = e.scale || 1; });
+  cv.addEventListener('gesturechange', e => { e.preventDefault(); const r = (e.scale || 1) / gScale; gScale = e.scale || 1; zoomScale(Math.pow(1 / r, ZOOM_SENS.gesture)); });
+  cv.addEventListener('gestureend', e => e.preventDefault());
 }
 function hoverCursor(e) {
   if (S.mode !== 'design' || DRAG.mode) return;
