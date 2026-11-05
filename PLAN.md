@@ -36,6 +36,14 @@ The "truth layer" generative UI will sit on.
   swing, counter items on the floor, ceiling clearance, work triangle (3.6–7.9 m).
 - Price is computed from configuration × finish; bag and summary carry configurations.
 
+## Phase 0.5 — Generated layouts ✅
+
+Hard-coded templates are gone. Claude returns a whole design as schema-constrained JSON
+(room, openings, units with options/finish/placement, style). `realizeDesign()` is the
+deterministic step that places it (walls, snapping, 3D collisions, door/window checks), repairs
+small overlaps and reports what it changed. Proposals render as cards; the planner's AI tab
+sends the current design (with manual edits) plus failing checks for revisions, with undo.
+
 ## Phase 1 — Tool layer (model ↔ scene)
 
 Expose the deterministic operations as JSON tools. Each tool validates through the same

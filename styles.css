@@ -361,3 +361,60 @@ input{font:inherit}
 .texbtn.on span{color:var(--ink);font-weight:700}
 #warn-body li.good{color:#1e7a3b}
 .tabs button{font-size:13px;gap:6px}
+
+/* AI designer */
+.brief{background:var(--bg2);border-radius:14px;padding:24px;display:flex;flex-direction:column;gap:16px}
+.brief-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+.lab{display:flex;flex-direction:column;gap:6px;font-weight:700;font-size:13px}
+.field{font:inherit;font-weight:400;font-size:14px;border:1px solid #c9c9c9;border-radius:8px;padding:9px 12px;background:#fff;width:100%;min-width:0}
+textarea.field{resize:vertical}
+.field:focus{outline:2px solid var(--blue);outline-offset:0;border-color:var(--blue)}
+.dim{display:flex;align-items:center;gap:8px;font-weight:400}
+.dim .field{width:80px}
+.pillf.sm{height:30px;padding:0 12px;font-size:12px;font-weight:600}
+.pill-btn.big{height:48px;padding:0 24px;font-size:15px}
+.brief-go{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.brief .pills{padding:2px 0}
+.ai-progress{margin-top:8px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px 16px;display:flex;flex-direction:column;gap:6px}
+.ai-row{display:flex;align-items:center;gap:10px}
+.ai-row .pill-btn{margin-left:auto}
+.ai-spin{width:16px;height:16px;border-radius:50%;border:2px solid #cfd8e3;border-top-color:var(--blue);animation:spin .8s linear infinite;flex:none}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.ai-spin{animation:none}}
+.ai-stat{font-size:13px;color:var(--ink2)}
+.ai-think{font-size:13px;color:var(--muted);font-style:italic;line-height:1.45;max-height:4.4em;overflow:hidden}
+.ai-error{margin-top:8px;background:#fdecea;color:#8a1c12;border-radius:10px;padding:12px 14px;font-size:14px}
+.ai-msg{font-size:13px;min-height:1.2em;margin:6px 0}
+.ai-msg.ok{color:#1e7a3b}.ai-msg.bad{color:#b3261e}
+.modal .lab{margin:12px 0 0}
+.modal .hint{color:var(--muted);font-size:12px;margin:6px 0 0}
+.gen-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:20px}
+.gcard{border:1px solid var(--line);border-radius:12px;overflow:hidden;display:flex;flex-direction:column;background:#fff}
+.gcard .thumb{background:var(--bg2);aspect-ratio:4/3;display:grid;place-items:center}
+.gcard .thumb svg{width:86%;height:86%}
+.gcard .meta{padding:14px 16px 16px;display:flex;flex-direction:column;gap:6px;flex:1}
+.gcard .meta small{color:var(--muted);text-transform:capitalize}
+.gcard .meta strong{font-size:17px}
+.gcard .meta p{margin:0;color:var(--ink2);font-size:13px;line-height:1.45}
+.gcard .meta .pill-btn{margin-top:auto;align-self:flex-start}
+.hl{margin:4px 0;padding-left:18px;font-size:13px;color:var(--ink2)}
+.hl li{margin:2px 0}
+.gfoot{display:flex;align-items:center;gap:10px;margin:4px 0 8px}
+.adj{font-size:11px;background:#fff3c4;color:#6b5200;border-radius:8px;padding:2px 8px;cursor:help}
+.manual{padding-top:0!important}
+.linkish{color:var(--blue);font-weight:700;text-decoration:underline}
+.aitab{display:flex;flex-direction:column;gap:12px}
+.ai-card{background:var(--bg2);border-radius:12px;padding:14px 16px}
+.ai-card h3{margin:2px 0 6px;font-size:17px}
+.ai-card p{margin:0 0 6px;color:var(--ink2);font-size:13px;line-height:1.5}
+.ai-card details{font-size:13px;color:var(--ink2);margin-top:6px}
+.ai-card summary,.ai-issues summary{cursor:pointer;font-weight:700}
+.ai-change{font-size:13px;background:#eef5fb;border-radius:10px;padding:10px 12px;line-height:1.45}
+.ai-issues{font-size:13px;background:#fff8e1;border-radius:10px;padding:10px 12px}
+.ai-issues ul{margin:6px 0 0;padding-left:18px}
+.ai-ask{display:flex;flex-direction:column;gap:10px}
+.tabs button{font-size:12px;gap:4px}
+@media (max-width:1000px){.brief-grid{grid-template-columns:1fr 1fr}}
+@media (max-width:640px){.brief-grid{grid-template-columns:1fr}.brief{padding:16px}}
+.brief .pillf{background:#fff;box-shadow:inset 0 0 0 1px #d6d6d6}
+.brief .pillf.on{background:#111;box-shadow:none}

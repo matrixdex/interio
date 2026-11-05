@@ -62,7 +62,7 @@ const IC = {
   undo: '<path d="M9 7L5 11l4 4"/><path d="M5 11h8a5 5 0 010 10h-3"/>', redo: '<path d="M15 7l4 4-4 4"/><path d="M19 11h-8a5 5 0 000 10h3"/>',
   check: '<path d="M5 12l5 5 9-10"/>', info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8v.5"/>',
   warn: '<path d="M12 4l9 16H3L12 4zM12 10v4M12 17v.5"/>', arrow: '<path d="M5 12h14M13 6l6 6-6 6"/>',
-  ext: '<path d="M14 5h5v5M19 5l-8 8M18 14v5H5V6h5"/>', list: '<rect x="5" y="4" width="14" height="16" rx="2"/><path d="M8 9h8M8 13h8M8 17h5"/>'
+  ext: '<path d="M14 5h5v5M19 5l-8 8M18 14v5H5V6h5"/>', spark: '<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3zM19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15z"/>', list: '<rect x="5" y="4" width="14" height="16" rx="2"/><path d="M8 9h8M8 13h8M8 17h5"/>'
 };
 const ico = (n, s = 22) => `<svg class="ico" viewBox="0 0 24 24" width="${s}" height="${s}" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${IC[n] || ''}</svg>`;
 const hydrateIcons = (root = document) => $$('[data-ico]', root).forEach(e => { if (!e.firstChild) e.innerHTML = ico(e.dataset.ico, e.classList.contains('mini') ? 16 : 22); });
@@ -564,53 +564,10 @@ const WINDOWS = [
 const STYLE = {}; [...DOORS, ...WINDOWS].forEach(s => STYLE[s.id] = s);
 const feat = (wall, style, u, extra) => { const s = STYLE[style]; return Object.assign({ id: uid(), wall, style, kind: s.kind, u, w: s.w, h: s.h, sill: s.sill }, extra || {}); };
 
-/* Kitchen templates. Runs list units along a wall from its start (cm from the west end for N/S walls, from the north end for W/E walls).
-   ['gap', cm] skips space. extras: [pid, cfg, v, wall, along-centre cm]; free: [pid, cfg, v, x, z, rot] (metres from room centre). */
-const B = (front, w, v = 0) => ['base-cab', { w, front }, v];
-const WC = (w, front = '2door', v = 0, hh = 70) => ['wall-cab', { w, front, hh }, v];
-const KITCHENS = [
-  { id: 'k-straight', kind: 'layout', name: 'Straight kitchen', blurb: 'Single wall · fridge, hob and sink in one run', W: 3.2, D: 2.4, ceil: 2.75, wall: 0, floor: 'f0', style: { counter: 'granite-black', tile: 'subway-white', handle: 'bar' }, fin: 0,
-    feats: () => [feat('N', 'w1', 2.65), feat('S', 'single', 1.0)],
-    runs: [['N', 0, [['fridge', { type: 'double' }, 0], B('3drawer', 60), ['hob-unit', { w: 75, burners: 4 }], B('1door', 45), ['sink-unit', { w: 60, bowl: 'single' }]]],
-      ['N', 0, [['loft', { w: 60 }], ['gap', 10], WC(60), ['chimney', { w: 75, style: 'pyramid' }], ['gap', 5]]]],
-    extras: [['microwave', {}, 0, 'N', 100]] },
-  { id: 'k-l', kind: 'layout', name: 'L-shaped kitchen', blurb: 'Two walls · sink under the window, hob on the long run', W: 3.0, D: 3.0, ceil: 2.75, wall: 1, floor: 'f1', style: { counter: 'quartz-white', tile: 'hex-grey', handle: 'gola' }, fin: 2,
-    feats: () => [feat('W', 'w1', 1.05), feat('S', 'single', 2.2)],
-    runs: [['N', 0, [B('blind', 90), B('3drawer', 60), ['hob-unit', { w: 75, burners: 4 }], B('2door', 60)]], ['W', 60, [['sink-unit', { w: 90, bowl: 'drainer' }], ['dishwasher', { w: 60 }], ['fridge', { type: 'single' }]]],
-      ['N', 0, [WC(90), WC(60, 'glass'), ['chimney', { w: 75, style: 'tshape' }], WC(60)]]],
-    extras: [['microwave', {}, 1, 'N', 120], ['ro', {}, 0, 'W', 175]] },
-  { id: 'k-u', kind: 'layout', name: 'U-shaped kitchen', blurb: 'Three walls · tall oven unit, lots of counter space', W: 3.2, D: 3.0, ceil: 2.75, wall: 2, floor: 'f3', style: { counter: 'granite-tan', tile: 'moroccan', handle: 'knob' }, fin: 7,
-    feats: () => [feat('N', 'w1', 1.35), feat('S', 'single', 1.6)],
-    runs: [['N', 0, [B('blind', 90), ['sink-unit', { w: 90, bowl: 'double' }], B('1door', 45), B('blind', 90)]], ['W', 60, [['hob-unit', { w: 75, burners: 4, below: 'oven' }], B('3drawer', 60), ['tall', { w: 60, cfg: 'oven' }]]], ['E', 60, [['fridge', { type: 'double' }, 1], B('2door', 60), B('1door', 45)]],
-      ['N', 0, [WC(75), ['gap', 110], WC(45, '1door'), WC(90)]], ['W', 60, [['chimney', { w: 75, style: 'curved' }], WC(60)]], ['E', 130, [WC(60, 'glass'), WC(45, '1door')]]],
-    extras: [['mixer', {}, 0, 'E', 160]] },
-  { id: 'k-parallel', kind: 'layout', name: 'Parallel kitchen', blurb: 'Galley · wet side and cooking side face each other', W: 2.6, D: 3.6, ceil: 2.75, wall: 7, floor: 'f4', style: { counter: 'granite-black', tile: 'kota', handle: 'bar' }, fin: 3,
-    feats: () => [feat('N', 'w1', 1.3), feat('S', 'single', 1.3)],
-    runs: [['W', 0, [B('2door', 60), ['sink-unit', { w: 90, bowl: 'drainer' }], B('3drawer', 60), ['dishwasher', { w: 60 }], B('1door', 45)]], ['E', 0, [['tall', { w: 60, cfg: 'pantry' }], B('2door', 60), ['hob-unit', { w: 90, burners: 5 }], B('3drawer', 60), ['fridge', { type: 'double' }, 0]]],
-      ['W', 0, [WC(60), WC(90), WC(60, 'glass'), WC(60)]], ['E', 60, [WC(60), ['chimney', { w: 90, style: 'filterless' }], WC(60)]]],
-    extras: [['otg', {}, 0, 'E', 90]] },
-  { id: 'k-island', kind: 'layout', name: 'Island kitchen', blurb: 'Open plan · sink on the island, breakfast seating', W: 4.2, D: 3.6, ceil: 2.8, wall: 0, floor: 'f8', style: { counter: 'marble', tile: 'terrazzo', handle: 'edge' }, fin: 1,
-    feats: () => [feat('W', 'w2', 1.8), feat('E', 'single', 2.8)],
-    runs: [['N', 0, [['fridge', { type: 'sxs' }, 0], ['tall', { w: 60, cfg: 'oven' }], B('3drawer', 60), ['hob-unit', { w: 90, burners: 5 }], B('2door', 60), B('4drawer', 45)]],
-      ['N', 151, [WC(60), ['chimney', { w: 90, style: 'pyramid' }, 0], WC(60, 'glass'), WC(45)]]],
-    free: [['sink-unit', { w: 90, bowl: 'single' }, 1, -.6, .3, 180], ['base-cab', { w: 60, front: '2door' }, 1, .15, .3, 180], ['base-cab', { w: 60, front: '3drawer' }, 1, .75, .3, 180],
-      ['stool', {}, 0, -.45, 1.0, 0], ['stool', {}, 0, .2, 1.0, 0], ['stool', {}, 0, .85, 1.0, 0]] },
-  { id: 'e-compact', kind: 'empty', name: 'Compact kitchen', blurb: 'Starts with sink, hob and chimney', W: 2.4, D: 2.1, ceil: 2.7, wall: 0, floor: 'f0', fin: 0,
-    feats: () => [feat('N', 'w1', 1.65), feat('S', 'single', .7)],
-    runs: [['N', 15, [['hob-unit', { w: 60, burners: 3 }], ['gap', 60], ['sink-unit', { w: 60, bowl: 'single' }]]], ['N', 15, [['chimney', { w: 60, style: 'pyramid' }]]]] },
-  { id: 'e-standard', kind: 'empty', name: 'Standard kitchen', blurb: 'Starts with sink, hob and chimney', W: 3.0, D: 2.7, ceil: 2.75, wall: 2, floor: 'f1', fin: 0,
-    feats: () => [feat('N', 'w1', 2.05), feat('S', 'single', .9)],
-    runs: [['N', 40, [['hob-unit', { w: 75, burners: 4 }], ['gap', 45], ['sink-unit', { w: 90, bowl: 'drainer' }]]], ['N', 40, [['chimney', { w: 75, style: 'tshape' }]]]] },
-  { id: 'e-large', kind: 'empty', name: 'Large kitchen', blurb: 'Starts with sink, hob and chimney', W: 3.6, D: 3.3, ceil: 2.8, wall: 0, floor: 'f2', fin: 0,
-    feats: () => [feat('W', 'w1', 1.6), feat('S', 'single', 2.8)],
-    runs: [['N', 120, [['hob-unit', { w: 90, burners: 5 }]]], ['W', 115, [['sink-unit', { w: 90, bowl: 'double' }]]], ['N', 120, [['chimney', { w: 90, style: 'curved' }]]]] },
-  { id: 'e-open', kind: 'empty', name: 'Open kitchen', blurb: 'Starts with sink, hob and chimney', W: 4.5, D: 3.6, ceil: 2.8, wall: 5, floor: 'f8', fin: 0,
-    feats: () => [feat('N', 'w2', 3.0), feat('E', 'glass', 2.6)],
-    runs: [['N', 100, [['hob-unit', { w: 90, burners: 4 }], ['gap', 65], ['sink-unit', { w: 90, bowl: 'drainer' }]]], ['N', 100, [['chimney', { w: 90, style: 'pyramid' }]]]] }
-];
-const TPL = id => KITCHENS.find(t => t.id === id);
-function roomFromTemplate(t) {
-  return { x0: -t.W / 2, x1: t.W / 2, z0: -t.D / 2, z1: t.D / 2, h: t.ceil, wall: WALL_COLORS[t.wall], floor: t.floor, feats: t.feats(), style: Object.assign({}, DEFAULT_STYLE, t.style || {}) };
+/* No hard-coded layouts: rooms and kitchens are generated by the AI designer (section 13).
+   A plain empty room is the only built-in starting point, for drawing a kitchen by hand. */
+function emptyRoom() {
+  return { x0: -1.5, x1: 1.5, z0: -1.35, z1: 1.35, h: 2.75, wall: DEFAULT_WALL, floor: 'f0', fin: 0, feats: [feat('N', 'w1', 1.5), feat('S', 'single', .8)], style: Object.assign({}, DEFAULT_STYLE) };
 }
 const sqft = R => Math.round((R.x1 - R.x0) * (R.z1 - R.z0) * 10.7639);
 const WALL_ROT = { N: 0, E: -90, S: 180, W: 90 };
@@ -621,21 +578,6 @@ function placeAgainst(R, d, wall, along) {
   const rot = WALL_ROT[wall], e = extOf(d, rot), ax = alongAxis(wall);
   const lo = ax === 'x' ? R.x0 + e.hw : R.z0 + e.hd, hi = ax === 'x' ? R.x1 - e.hw : R.z1 - e.hd, a = lo > hi ? (lo + hi) / 2 : clamp(along, lo, hi);
   return { x: wall === 'W' ? R.x0 + e.hw : wall === 'E' ? R.x1 - e.hw : a, z: wall === 'N' ? R.z0 + e.hd : wall === 'S' ? R.z1 - e.hd : a, rot };
-}
-function layoutItems(R, t) {
-  const out = [], fv = t.fin || 0;
-  for (const [wall, start, list] of t.runs || []) {
-    let a = start / 100; const base = alongAxis(wall) === 'x' ? R.x0 : R.z0;
-    for (const e of list) {
-      if (e[0] === 'gap') { a += e[1] / 100; continue; }
-      const [pid, cfg, v] = e, p = P(pid), c = Object.assign(defCfg(p), cfg || {}), d = dimsOf(p, c, R);
-      const pos = placeAgainst(R, d, wall, base + a + d.w / 2);
-      out.push({ pid, v: v ?? (p.variants[0].fin ? fv : 0), cfg: c, x: pos.x, z: pos.z, rot: pos.rot, wall }); a += d.w;
-    }
-  }
-  for (const [pid, cfg, v, wall, along] of t.extras || []) { const p = P(pid), c = Object.assign(defCfg(p), cfg), d = dimsOf(p, c, R), base = alongAxis(wall) === 'x' ? R.x0 : R.z0, pos = placeAgainst(R, d, wall, base + along / 100); out.push({ pid, v, cfg: c, x: pos.x, z: pos.z, rot: pos.rot, wall }); }
-  for (const [pid, cfg, v, x, z, rot] of t.free || []) { const p = P(pid); out.push({ pid, v: v ?? 0, cfg: Object.assign(defCfg(p), cfg), x, z, rot, wall: null }); }
-  return out;
 }
 
 /* ═══════════════ 5 · state, scene & cameras ═══════════════ */
@@ -1640,9 +1582,9 @@ const texURL = (kind, c, c2) => { const k = kind + c + (c2 || ''); if (!texURLs.
 /* ── side panel (kitchen) ── */
 function renderTabs(root) {
   const tab = (id, icon, label) => h('button', { class: S.tab === id ? 'on' : '', role: 'tab', 'aria-selected': S.tab === id, onclick: () => { S.tab = id; renderPanel(); } }, h('span', { html: ico(icon, 20) }), label);
-  root.append(h('div', { class: 'tabs', role: 'tablist' }, tab('add', 'plus', 'Add'), tab('style', 'palette', 'Finishes'), tab('list', 'list', 'List'), tab('favs', 'heart', 'Saved')));
+  root.append(h('div', { class: 'tabs', role: 'tablist' }, tab('ai', 'spark', 'AI'), tab('add', 'plus', 'Add'), tab('style', 'palette', 'Finishes'), tab('list', 'list', 'List'), tab('favs', 'heart', 'Saved')));
   const sc = h('div', { class: 'pscroll' }); root.append(sc);
-  if (S.tab === 'add') renderAdd(sc); else if (S.tab === 'style') renderStyle(sc); else if (S.tab === 'list') renderList(sc); else renderFavs(sc);
+  if (S.tab === 'ai') renderAITab(sc); else if (S.tab === 'add') renderAdd(sc); else if (S.tab === 'style') renderStyle(sc); else if (S.tab === 'list') renderList(sc); else renderFavs(sc);
 }
 function matches(p) {
   const q = S.query.trim().toLowerCase();
@@ -1817,22 +1759,22 @@ function editRedo() { if (!S.edit.redo.length) return; S.edit.undo.push(JSON.str
 
 /* ── persistence & lifecycle ── */
 function currentDoc() {
-  return { id: S.designId, templateId: S.templateId, title: S.title, room: S.room, updated: Date.now(), kitchen: 1,
-    items: S.items.map(i => ({ pid: i.pid, v: i.v, cfg: i.cfg, x: +i.x.toFixed(3), z: +i.z.toFixed(3), rot: i.rot, wall: i.wall })) };
+  return { id: S.designId, templateId: S.templateId, title: S.title, room: S.room, updated: Date.now(), kitchen: 1, ai: S.ai || null,
+    items: S.items.map(i => ({ pid: i.pid, v: i.v, cfg: i.cfg, x: +i.x.toFixed(3), z: +i.z.toFixed(3), rot: i.rot, wall: i.wall, purpose: i.purpose || '' })) };
 }
 function startDesign(doc) {
   S.designId = doc.id; S.templateId = doc.templateId; S.title = doc.title || 'My kitchen'; S.room = JSON.parse(JSON.stringify(doc.room));
   S.room.style = Object.assign({}, DEFAULT_STYLE, S.room.style || {}); S.room.fin = S.room.fin || 0;
-  S.mode = 'design'; S.edit = null; S.view = 'dollhouse'; S.sel = null; S.tab = 'add'; S.cat = null; S.query = ''; S.menu = null; S.stripOpen = false; S.rotating = false; S.actions = 0;
+  S.ai = doc.ai || null; S.aiUndo = [];
+  S.mode = 'design'; S.edit = null; S.view = 'dollhouse'; S.sel = null; S.tab = 'ai'; S.cat = null; S.query = ''; S.menu = null; S.stripOpen = false; S.rotating = false; S.actions = 0;
   GL.itemGroup.children.slice().forEach(c => { GL.itemGroup.remove(c); disposeTree(c); }); S.items = [];
-  for (const d of doc.items || []) { const p = P(d.pid); if (!p) continue; const it = { uid: uid(), pid: d.pid, v: d.v || 0, cfg: Object.assign(defCfg(p), d.cfg || {}), x: d.x, z: d.z, rot: d.rot || 0, wall: d.wall ?? null }; S.items.push(it); attachItem(it); }
+  for (const d of doc.items || []) { const p = P(d.pid); if (!p) continue; const it = { uid: uid(), pid: d.pid, v: d.v || 0, cfg: Object.assign(defCfg(p), d.cfg || {}), x: d.x, z: d.z, rot: d.rot || 0, wall: d.wall ?? null, purpose: d.purpose || '' }; S.items.push(it); attachItem(it); }
   $('#design-title').value = S.title; toggleStrip(false); closePopovers();
   buildRoom(); fitCamera(); updateCamera(); renderBottomBar(); renderPanel(); refreshTotals(); refreshWarnings(); renderItemFloat(); updateBagCount(); markDirty();
 }
 function openTemplate(tid, did) {
-  const t = TPL(tid) || (tid === 'custom' ? TPL('e-standard') : null); if (!t) return false;
-  const room = roomFromTemplate(t); room.fin = t.fin || 0;
-  startDesign({ id: did || uid(), templateId: tid, title: t.kind === 'layout' && tid !== 'custom' ? t.name : 'My kitchen', room, items: layoutItems(room, t) }); return true;
+  if (tid !== 'custom') return false;
+  startDesign({ id: did || uid(), templateId: 'custom', title: 'My kitchen', room: emptyRoom(), items: [] }); return true;
 }
 
 /* ── hub ── */
@@ -1863,12 +1805,12 @@ function roomCard(name, R, tid, opts = {}) {
     h('div', { class: 'meta' }, h('small', null, opts.small || `${sqft(R)} sq.ft`), h('strong', null, name), opts.blurb ? h('span', { class: 'muted', style: 'font-size:13px' }, opts.blurb) : null, h('span', { class: 'go' }, opts.cta || 'Design this kitchen', h('span', { html: ico('arrow', 18) }))));
 }
 function renderHub() {
-  const ge = $('#grid-empty'), gf = $('#grid-furnished'), gm = $('#mydesigns-grid'); ge.innerHTML = gf.innerHTML = gm.innerHTML = '';
-  KITCHENS.forEach(t => { const R = roomFromTemplate(t), items = layoutItems(R, t); (t.kind === 'layout' ? gf : ge).append(roomCard(t.name, R, t.id, { items, blurb: t.blurb, small: `${fmtHub(R)} · ${sqft(R)} sq.ft` })); });
+  const gm = $('#mydesigns-grid'); gm.innerHTML = '';
+  renderBrief(); renderResults();
   const all = Object.values(docs()).filter(d => d && d.room && d.kitchen).sort((a, b) => b.updated - a.updated);
-  $('#mydesigns').hidden = !all.length; $('#saved-hint').textContent = all.length ? `${all.length} saved kitchen${all.length > 1 ? 's' : ''} in this browser` : '';
+  $('#mydesigns').hidden = !all.length;
   all.forEach(d => {
-    const c = roomCard(d.title || 'My kitchen', d.room, d.templateId, { items: d.items, small: `${d.items.length} item${d.items.length === 1 ? '' : 's'} · ${new Date(d.updated).toLocaleDateString()}`, cta: 'Open design', onclick: () => { location.hash = `#${d.templateId}/${d.id}`; } });
+    const c = roomCard(d.title || 'My kitchen', d.room, d.templateId, { items: d.items, small: `${d.items.length} unit${d.items.length === 1 ? '' : 's'} · ${new Date(d.updated).toLocaleDateString()}${d.ai ? ' · AI design' : ''}`, cta: 'Open design', onclick: () => { location.hash = `#${d.templateId}/${d.id}`; } });
     const del = h('button', { class: 'pill-btn sm', style: 'margin:0 14px 14px;align-self:flex-start', onclick: e => { e.stopPropagation(); const m = docs(); delete m[d.id]; store.set('designs', m); renderHub(); } }, 'Delete');
     const wrap = h('div', { class: 'rcard', style: 'padding:0;border:0;box-shadow:none' }); c.style.width = '100%'; wrap.append(c, del); gm.append(wrap);
   });
@@ -1890,6 +1832,360 @@ function drawHero() {
   box(.2, 1.85, 0, 1.2, 1.2, .62, '#7d9378', '#8fa58a', '#7d9378'); box(4.8, 1.85, 0, 1, 1.2, .62, '#7d9378', '#8fa58a', '#7d9378');
   box(1.75, 1.9, 0, .8, .25, .8, '#b9bcc0', '#c8cbcf', '#a9acb0'); box(2.0, 2.15, 0, .3, .85, .3, '#b9bcc0', '#c8cbcf', '#a9acb0');
   box(3.7, 1.03, .15, .6, .02, .55, '#b8bcc1', '#9a9ea3', '#9a9ea3');
+}
+
+/* ═══════════════ 13 · AI designer — Claude generates rooms, layouts and whole kitchen designs ═══════════════
+   Only the catalogue (products, options, finishes, prices) and the physics of placement are deterministic.
+   Claude returns a design spec (JSON, schema-constrained); realizeDesign() turns it into a room + placed units,
+   nudging small overlaps and reporting anything it couldn't place. Users then edit by hand or ask Claude for changes. */
+const AI_MODELS = [['claude-opus-5-5', 'Claude Opus 5.5 — best layouts'], ['claude-sonnet-5-5', 'Claude Sonnet 5.5 — faster'], ['claude-haiku-5-5', 'Claude Haiku 5.5 — fastest, cheapest']];
+const AI_EFFORTS = [['low', 'Low'], ['medium', 'Medium'], ['high', 'High'], ['xhigh', 'Extra high']];
+const AI = { cfg: Object.assign({ key: '', proxy: '', model: 'claude-opus-5-5', effort: 'high' }, store.get('ai', {})), ctrl: null, busy: false, sys: null, schemas: null };
+const aiReady = () => !!(AI.cfg.key || AI.cfg.proxy);
+function aiClient() {
+  const A = window.Anthropic; if (!A) throw new Error('The Claude SDK did not load (vendor/anthropic-sdk.min.js).');
+  return AI.cfg.proxy ? new A({ apiKey: 'injected-by-proxy', baseURL: AI.cfg.proxy.replace(/\/+$/, ''), dangerouslyAllowBrowser: true })
+    : new A({ apiKey: AI.cfg.key, dangerouslyAllowBrowser: true });
+}
+function aiErrorText(e) {
+  const A = window.Anthropic || {};
+  if (e && (e.name === 'AbortError' || (A.APIUserAbortError && e instanceof A.APIUserAbortError))) return 'Cancelled.';
+  if (A.AuthenticationError && e instanceof A.AuthenticationError) return 'Claude rejected the API key — check it in AI settings.';
+  if (A.PermissionDeniedError && e instanceof A.PermissionDeniedError) return "This key doesn't have access to that model — pick another in AI settings.";
+  if (A.NotFoundError && e instanceof A.NotFoundError) return 'Model not found — pick another model in AI settings.';
+  if (A.RateLimitError && e instanceof A.RateLimitError) return 'Rate limited — wait a moment and try again.';
+  if (A.BadRequestError && e instanceof A.BadRequestError) return 'Claude rejected the request: ' + e.message;
+  if (A.APIConnectionError && e instanceof A.APIConnectionError) return "Couldn't reach Claude — check your internet connection or proxy URL.";
+  if (A.APIError && e instanceof A.APIError) return `Claude API error ${e.status ?? ''}: ${e.message}`;
+  return (e && e.message) || String(e);
+}
+
+/* ── what Claude knows: the deterministic catalogue + conventions (stable → prompt-cached) ── */
+function catalogForAI() {
+  const R = { h: 2.75 };
+  const products = PRODUCTS.map(p => {
+    const c = defCfg(p), d = dimsOf(p, c, R), out = {
+      id: p.id, name: p.name, what: p.type, category: p.cat, mount: p.mount, provides_worktop: !!p.counter, essential: p.essential || null,
+      default_size_cm: { width: Math.round(d.w * 100), depth: Math.round(d.d * 100), height: p.toCeiling ? 'up to the ceiling' : Math.round(d.h * 100) },
+      options: Object.fromEntries(p.opts.map(o => [o.key, o.values.map(([v, l]) => `${v} = ${l}`)])),
+      finishes: p.variants.map((v, i) => `${i} = ${v.n}`),
+      price_inr_at_defaults: p.price(c, p.variants[0])
+    };
+    if (p.mount === 'wall') out.mounted_bottom_at_cm = typeof p.y0 === 'function' ? 'max(215, ceiling − 60)' : Math.round(d.y0 * 100);
+    if (p.dims && p.opts.length) { const o = p.opts[0]; out.size_by_option = Object.fromEntries(o.values.map(([v]) => { const dd = p.dims(Object.assign({}, c, { [o.key]: v })); return [`${o.key}=${v}`, `${dd.w}×${dd.d}×${dd.h} cm`]; })); }
+    const wo = p.opts.find(o => o.key === 'w'); if (wo) out.price_inr_by_width = Object.fromEntries(wo.values.map(([w]) => [w, p.price(Object.assign({}, c, { w }), p.variants[0])]));
+    return out;
+  });
+  return {
+    products,
+    cabinet_finishes: FINISHES.map((f, i) => `${i} = ${f.n}${f.mult !== 1 ? ` (price ×${f.mult})` : ''}`),
+    countertops: COUNTERS.map(c => `${c.id} = ${c.n}`), handles: HANDLES.map(([id, n]) => `${id} = ${n}`),
+    wall_tiles: TILES.map(t => `${t.id} = ${t.n}`), tile_coverage: TILE_COVER.map(([id, n]) => `${id} = ${n}`),
+    floors: FLOORS.map(f => `${f.id} = ${f.name}`), wall_paints: WALL_COLORS,
+    doors: DOORS.map(d => `${d.id} = ${d.name}, ${Math.round(d.w * 100)} cm wide, ${Math.round(d.h * 100)} cm high`),
+    windows: WINDOWS.map(w => `${w.id} = ${w.name}, ${Math.round(w.w * 100)} cm wide, sill at ${Math.round(w.sill * 100)} cm, ${Math.round(w.h * 100)} cm high`)
+  };
+}
+function aiSystem() {
+  if (AI.sys) return AI.sys;
+  AI.sys = `You are the kitchen designer inside Interio, a 3D modular-kitchen planner for Indian homes. You design the room and the complete kitchen; the app renders your design in 3D, prices it from the catalogue and checks it.
+
+You can only use products, options, finishes and style ids from the catalogue below. Sizes and prices come from the catalogue; never invent products.
+
+## Coordinates
+- The room is a rectangle seen from above. Origin = the north-west inside corner. x grows east (room width), z grows south (room depth). All values in centimetres.
+- Walls: N (z = 0), S (z = depth), W (x = 0), E (x = width). Each wall is measured from its start: N and S walls start at the west end; W and E walls start at the north end.
+- Openings (doors/windows) sit on a wall at center_cm measured from that wall's start. Windows have a sill at 105 cm and are 100 cm high.
+
+## Placing units
+- placement.mode "wall": the unit's back goes flat against \`wall\`, facing into the room. start_cm = distance from the wall's start to the unit's near edge. Width along the wall is the unit's width. Use this for every base cabinet, sink unit, hob unit, dishwasher, tall unit, fridge, wall cabinet, chimney, loft, shelf and water purifier. Heights are automatic (base units 90 cm with worktop, wall cabinets from 145 cm, chimney hood from 155 cm, loft at the top of the wall).
+- A run along a wall is consecutive units: next start_cm = previous start_cm + previous width. Floor units and wall units are separate layers, so a wall cabinet can share the same start_cm range as the base units below it.
+- Corners: base units are 60 cm deep. When two runs meet, the second run must start at 60 cm on its wall (the corner square belongs to the first run; a base-cab with front "blind" makes a good corner unit). Wall units are 35 cm deep, so a second wall-unit run can start at 35 cm.
+- placement.mode "counter": counter-top items (microwave, otg, mixer, gas-stove) sit on a unit that provides a worktop. Give the wall and start_cm of the item's near edge; the unit underneath must already be in your design.
+- placement.mode "free": islands, peninsulas and stools. x_cm, z_cm = the unit's centre; rotation_deg = which way its front faces: 0 south, 90 east, 180 north, -90 west.
+- Leave fields that don't apply as null. Set only the options that belong to that product (others null). finish is an index into the product's finishes (for cabinets, into cabinet_finishes).
+- List floor units first, then wall units, then counter-top items.
+
+## Rules the planner checks (design to pass them)
+- Every Indian kitchen has a sink, a stove (hob-unit, or gas-stove on a worktop) and a chimney. The chimney sits on the same wall directly above the stove, at least as wide as the hob.
+- Units must fit inside the walls: on each wall, the furthest unit edge must not pass the wall length. No two units may overlap.
+- Doors: nothing in front of a door within its width, and nothing across it. Windows: base units may go under a window; wall cabinets, chimneys, lofts, tall units and fridges must not cover a window's span. Put the sink under a window when there is one.
+- Leave at least 30 cm (ideally 45–60 cm) of worktop between the sink and the hob, and worktop next to the hob.
+- Work triangle sink → stove → fridge: 3.6–7.9 m total. Aisles between facing runs or an island: 100–120 cm.
+
+## Indian kitchen practice
+- Heavy cooking (daily tadka, deep-frying): 4–5 burner hob, chimney 75–90 cm (curved glass or filterless for heavy oil), drawer units next to the hob for masala and utensils, easy-clean finishes and tiles (dado or full tiling).
+- RO water purifier on the wall near the sink. Overhead loft for bulk storage is common. A tall pantry suits families buying in bulk. Fridge near the entrance. Many homes prefer a 3-drawer unit beside the hob.
+- Budgets are usually given in lakh (1 lakh = ₹1,00,000). Estimate cost from price_inr fields; stay within the budget and say if it's tight.
+- When the user gives sizes in feet, convert (1 ft = 30.48 cm). If no size is given, pick a realistic urban Indian kitchen (e.g. 240×300 cm to 360×420 cm) and include a door and usually a window.
+
+## Writing
+- name: short and evocative. concept: one or two sentences. highlights: 3–5 short phrases a homeowner cares about. notes: trade-offs, assumptions (e.g. assumed room size) and anything to verify on site. purpose on each item: a few words.
+- When asked for several designs, make them genuinely different (layout type, palette, priorities), not variations of one plan.
+
+## Catalogue (JSON)
+${JSON.stringify(catalogForAI())}`;
+  return AI.sys;
+}
+function aiSchemas() {
+  if (AI.schemas) return AI.schemas;
+  const nul = s => ({ anyOf: [s, { type: 'null' }] }), obj = props => ({ type: 'object', properties: props, required: Object.keys(props), additionalProperties: false });
+  const optVals = {}; PRODUCTS.forEach(p => p.opts.forEach(o => { optVals[o.key] = optVals[o.key] || []; o.values.forEach(([v]) => { if (!optVals[o.key].includes(v)) optVals[o.key].push(v); }); }));
+  const options = obj(Object.fromEntries(Object.entries(optVals).map(([k, vals]) => [k, nul({ enum: vals })])));
+  const wall = { type: 'string', enum: WALLS };
+  const item = obj({
+    product: { type: 'string', enum: PRODUCTS.map(p => p.id) }, purpose: { type: 'string' }, finish: { type: 'integer' }, options,
+    placement: obj({ mode: { type: 'string', enum: ['wall', 'counter', 'free'] }, wall: nul(wall), start_cm: nul({ type: 'number' }), x_cm: nul({ type: 'number' }), z_cm: nul({ type: 'number' }), rotation_deg: nul({ type: 'number' }) })
+  });
+  const room = obj({ width_cm: { type: 'number' }, depth_cm: { type: 'number' }, ceiling_cm: { type: 'number' }, wall_paint: { type: 'string', enum: WALL_COLORS }, floor: { type: 'string', enum: FLOORS.map(f => f.id) },
+    openings: { type: 'array', items: obj({ type: { type: 'string', enum: Object.keys(STYLE) }, wall, center_cm: { type: 'number' }, width_cm: nul({ type: 'number' }) }) } });
+  const style = obj({ countertop: { type: 'string', enum: COUNTERS.map(c => c.id) }, handles: { type: 'string', enum: HANDLES.map(x => x[0]) }, wall_tile: { type: 'string', enum: TILES.map(t => t.id) }, tile_coverage: { type: 'string', enum: TILE_COVER.map(t => t[0]) }, cabinet_finish: { type: 'integer' } });
+  const design = obj({ name: { type: 'string' }, layout_type: { type: 'string', enum: ['straight', 'L-shaped', 'U-shaped', 'parallel', 'island', 'peninsula', 'other'] }, concept: { type: 'string' },
+    highlights: { type: 'array', items: { type: 'string' } }, room, style, items: { type: 'array', items: item }, notes: { type: 'array', items: { type: 'string' } } });
+  return AI.schemas = { proposals: obj({ designs: { type: 'array', items: design } }), edit: obj({ change_summary: { type: 'string' }, design }) };
+}
+
+/* ── the call: streamed, schema-constrained, cached system prompt, refusal fallback ── */
+async function aiCall(kind, userText, onProgress) {
+  if (window.__interioMockAI) return window.__interioMockAI(kind, userText, onProgress); // test hook
+  const client = aiClient(); AI.ctrl = new AbortController();
+  const body = {
+    model: AI.cfg.model, max_tokens: 64000,
+    thinking: { type: 'adaptive', display: 'summarized' },
+    output_config: { effort: AI.cfg.effort, format: { type: 'json_schema', schema: aiSchemas()[kind] } },
+    system: [{ type: 'text', text: aiSystem(), cache_control: { type: 'ephemeral' } }],
+    messages: [{ role: 'user', content: userText }]
+  };
+  if (AI.cfg.model !== 'claude-haiku-5-5') { body.betas = ['server-side-fallback-2026-07-01']; body.fallbacks = 'default'; } // re-run declined requests on Anthropic's recommended fallback model
+  const stream = client.beta.messages.stream(body, { signal: AI.ctrl.signal });
+  let chars = 0;
+  stream.on('thinking', d => onProgress && onProgress({ thinking: d }));
+  stream.on('text', d => { chars += d.length; onProgress && onProgress({ chars }); });
+  const msg = await stream.finalMessage();
+  if (msg.stop_reason === 'refusal') throw new Error(`Claude declined this request${msg.stop_details && msg.stop_details.explanation ? ': ' + msg.stop_details.explanation : '.'}`);
+  if (msg.stop_reason === 'max_tokens') throw new Error('The design was cut off before it finished. Ask for fewer options or a simpler kitchen.');
+  const text = msg.content.filter(b => b.type === 'text').map(b => b.text).join('');
+  try { return JSON.parse(text); } catch (e) { throw new Error('Claude returned a design the planner could not read. Please try again.'); }
+}
+
+/* ── spec → room + placed units (the deterministic "physics" step) ── */
+function realizeDesign(dz) {
+  const issues = [], room0 = dz.room || {}, st = dz.style || {};
+  const W = clamp((room0.width_cm || 300) / 100, 1.8, 12), D = clamp((room0.depth_cm || 270) / 100, 1.5, 12), Hc = clamp((room0.ceiling_cm || 275) / 100, 2.3, 3.8);
+  const fin = clamp(Math.round(st.cabinet_finish || 0), 0, FINISHES.length - 1);
+  const R = { x0: -W / 2, x1: W / 2, z0: -D / 2, z1: D / 2, h: Hc, wall: WALL_COLORS.includes(room0.wall_paint) ? room0.wall_paint : DEFAULT_WALL, floor: FLOORS.some(f => f.id === room0.floor) ? room0.floor : 'f0', feats: [], fin,
+    style: { counter: COUNTERS.some(c => c.id === st.countertop) ? st.countertop : DEFAULT_STYLE.counter, handle: HANDLES.some(x => x[0] === st.handles) ? st.handles : DEFAULT_STYLE.handle, tile: TILES.some(t => t.id === st.wall_tile) ? st.wall_tile : DEFAULT_STYLE.tile, tileCover: TILE_COVER.some(t => t[0] === st.tile_coverage) ? st.tile_coverage : DEFAULT_STYLE.tileCover } };
+  const len = w => (w === 'N' || w === 'S') ? W : D;
+  for (const o of room0.openings || []) {
+    const s = STYLE[o.type]; if (!s || !WALLS.includes(o.wall)) continue;
+    const f = feat(o.wall, o.type, 0); if (o.width_cm) f.w = clamp(o.width_cm / 100, .5, Math.min(3, len(o.wall) - .2));
+    f.u = clamp((o.center_cm || 0) / 100, f.w / 2 + .05, len(o.wall) - f.w / 2 - .05);
+    if (R.feats.some(g => g.wall === f.wall && Math.abs(g.u - f.u) < (g.w + f.w) / 2 + .05)) { issues.push(`Dropped a ${s.kind} on the ${WALL_NAME[o.wall].toLowerCase()} that overlapped another opening.`); continue; }
+    R.feats.push(f);
+  }
+  const save = [S.room, S.items]; S.room = R; S.items = [];
+  try {
+    const list = (dz.items || []).map((it, i) => ({ it, i, p: P(it.product) })), order = x => !x.p ? 3 : x.p.mount === 'counter' ? 2 : x.p.mount === 'wall' ? 1 : 0;
+    list.sort((a, b) => order(a) - order(b) || a.i - b.i);
+    for (const { it, p } of list) {
+      if (!p) { issues.push(`Skipped an unknown product "${it.product}".`); continue; }
+      const nm = p.name.toLowerCase(), cfg = defCfg(p);
+      for (const o of p.opts) { const v = it.options ? it.options[o.key] : null; if (v == null) continue; if (o.values.some(x => x[0] === v)) cfg[o.key] = v; else issues.push(`The ${nm}'s ${o.label.toLowerCase()} "${v}" isn't available — used ${optLabel(p, o.key, cfg[o.key])}.`); }
+      const v = Number.isInteger(it.finish) && it.finish >= 0 && it.finish < p.variants.length ? it.finish : (p.variants[0].fin ? fin : 0);
+      const tmp = { uid: uid(), pid: p.id, v, cfg, x: 0, z: 0, rot: 0, wall: null, purpose: it.purpose || '' }, pl = it.placement || {}, d = dimsOf(p, cfg);
+      let sh = null, planned = null;
+      if ((pl.mode === 'wall' || pl.mode === 'counter') && WALLS.includes(pl.wall)) {
+        const base = alongAxis(pl.wall) === 'x' ? R.x0 : R.z0, start = (pl.start_cm || 0) / 100;
+        if (start + d.w > len(pl.wall) + .02) issues.push(`The ${nm} ran past the end of the ${WALL_NAME[pl.wall].toLowerCase()} and was pulled back.`);
+        sh = wallPlace(tmp, pl.wall, base + start + d.w / 2); planned = sh;
+      } else if (pl.mode === 'free' && pl.x_cm != null && pl.z_cm != null) {
+        const rot = Math.round((pl.rotation_deg || 0) / 90) * 90, q = clampXZ(tmp, R.x0 + pl.x_cm / 100, R.z0 + pl.z_cm / 100, rot);
+        sh = shapeOf(tmp, q.x, q.z, ((rot + 540) % 360) - 180); planned = sh;
+      } else sh = findSlot(tmp);
+      if (sh && (collides(sh, tmp) || featureHit(sh, true))) {
+        const why = collides(sh, tmp) ? `overlapped the ${P(hitBy(sh, tmp).pid).name.toLowerCase()}` : 'blocked a door or window';
+        let fixed = null;
+        if (wallOf(sh)) { const w = wallOf(sh), ax = alongAxis(w), a0 = ax === 'x' ? sh.x : sh.z; for (let k = 1; k <= 30 && !fixed; k++) for (const sg of [1, -1]) { const s2 = wallPlace(tmp, w, a0 + sg * k * .05); if (!collides(s2, tmp) && !featureHit(s2, true)) { fixed = s2; break; } } }
+        else for (let r = .05; r <= 1 && !fixed; r += .05) for (let a = 0; a < 16; a++) { const q = clampXZ(tmp, sh.x + Math.cos(a / 16 * 6.283) * r, sh.z + Math.sin(a / 16 * 6.283) * r, sh.rot), s2 = shapeOf(tmp, q.x, q.z, sh.rot); if (!collides(s2, tmp) && !featureHit(s2, true)) { fixed = s2; break; } }
+        if (fixed) issues.push(`The ${nm} ${why}, so it was moved ${Math.round(Math.hypot(fixed.x - sh.x, fixed.z - sh.z) * 100)} cm.`);
+        else issues.push(`The ${nm} ${why} and there was no room nearby, so it was left out.`);
+        sh = fixed;
+      }
+      if (!sh) continue;
+      void planned; applyShape(tmp, sh);
+      if (p.mount === 'counter' && shapeOf(tmp).y0 < .01) issues.push(`The ${nm} isn't on a worktop.`);
+      S.items.push(tmp);
+    }
+    return { room: R, items: S.items.map(i => ({ pid: i.pid, v: i.v, cfg: i.cfg, x: i.x, z: i.z, rot: i.rot, wall: i.wall, purpose: i.purpose })), issues };
+  } finally { S.room = save[0]; S.items = save[1]; }
+}
+/* current state → the same spec format (so Claude sees the user's manual edits) */
+function currentSpec() {
+  const R = S.room, st = styleOf(), ai = S.ai || {};
+  const nullOpts = () => { const o = {}; PRODUCTS.forEach(p => p.opts.forEach(x => o[x.key] = null)); return o; };
+  return {
+    name: S.title, layout_type: ai.layout_type || 'other', concept: ai.concept || '', highlights: ai.highlights || [], notes: ai.notes || [],
+    room: { width_cm: Math.round((R.x1 - R.x0) * 100), depth_cm: Math.round((R.z1 - R.z0) * 100), ceiling_cm: Math.round(R.h * 100), wall_paint: R.wall, floor: R.floor,
+      openings: R.feats.map(f => ({ type: f.style, wall: f.wall, center_cm: Math.round(f.u * 100), width_cm: Math.round(f.w * 100) })) },
+    style: { countertop: st.counter, handles: st.handle, wall_tile: st.tile, tile_coverage: st.tileCover, cabinet_finish: R.fin || 0 },
+    items: S.items.map(it => {
+      const p = P(it.pid), sh = shapeOf(it), options = Object.assign(nullOpts(), it.cfg);
+      let placement;
+      if (it.wall) { const ax = alongAxis(it.wall), base = ax === 'x' ? R.x0 : R.z0, lo = (ax === 'x' ? sh.x - sh.hw : sh.z - sh.hd) - base; placement = { mode: p.mount === 'counter' ? 'counter' : 'wall', wall: it.wall, start_cm: Math.round(lo * 100), x_cm: null, z_cm: null, rotation_deg: null }; }
+      else placement = { mode: p.mount === 'counter' ? 'free' : 'free', wall: null, start_cm: null, x_cm: Math.round((it.x - R.x0) * 100), z_cm: Math.round((it.z - R.z0) * 100), rotation_deg: Math.round(it.rot) };
+      return { product: it.pid, purpose: it.purpose || '', finish: it.v, options, placement };
+    })
+  };
+}
+function docFromDesign(dz, real, extra = {}) {
+  return Object.assign({ id: uid(), templateId: 'ai', title: dz.name || 'AI kitchen', room: real.room, items: real.items, kitchen: 1, updated: Date.now(),
+    ai: { concept: dz.concept || '', highlights: dz.highlights || [], notes: dz.notes || [], layout_type: dz.layout_type || 'other', issues: real.issues } }, extra);
+}
+const docPrice = doc => doc.items.reduce((s, i) => { const p = P(i.pid); return p ? s + p.price(i.cfg, p.variants[i.v] || p.variants[0]) : s; }, 0);
+
+/* ── progress UI shared by the hub and the planner ── */
+function aiProgress(label) {
+  const think = h('div', { class: 'ai-think' }), stat = h('div', { class: 'ai-stat' }, 'Connecting to Claude…');
+  const cancel = h('button', { class: 'pill-btn sm', onclick: () => AI.ctrl && AI.ctrl.abort() }, 'Cancel');
+  const el = h('div', { class: 'ai-progress', role: 'status', 'aria-live': 'polite' }, h('div', { class: 'ai-row' }, h('span', { class: 'ai-spin', 'aria-hidden': 'true' }), h('b', null, label), cancel), stat, think);
+  let buf = '';
+  return { el, update(e) {
+    if (e.thinking) { buf = (buf + e.thinking).slice(-420); think.textContent = '“' + buf.replace(/\s+/g, ' ').trim() + '”'; stat.textContent = 'Thinking through the layout…'; }
+    if (e.chars) stat.textContent = `Drawing up the design… ${(e.chars / 1000).toFixed(1)}k characters`;
+  } };
+}
+
+/* ── settings ── */
+function showAISettings(onSaved) {
+  const c = AI.cfg, msg = h('p', { class: 'ai-msg', role: 'status' });
+  const key = h('input', { type: 'password', class: 'field', value: c.key, placeholder: 'sk-ant-…', autocomplete: 'off', 'aria-label': 'Anthropic API key' });
+  const proxy = h('input', { type: 'url', class: 'field', value: c.proxy, placeholder: 'https://your-proxy.workers.dev (optional)', 'aria-label': 'Proxy URL' });
+  const model = h('select', { class: 'field', 'aria-label': 'Model' }, AI_MODELS.map(([id, n]) => h('option', { value: id, selected: id === c.model }, n)));
+  const effort = h('select', { class: 'field', 'aria-label': 'Effort' }, AI_EFFORTS.map(([id, n]) => h('option', { value: id, selected: id === c.effort }, n)));
+  const read = () => ({ key: key.value.trim(), proxy: proxy.value.trim(), model: model.value, effort: effort.value });
+  let close;
+  close = modal(h('div', null, h('h3', null, 'AI designer settings'),
+    h('p', { class: 'muted' }, 'Designs are generated by Claude. Use your own Anthropic API key, or a proxy that adds the key for you.'),
+    h('label', { class: 'lab' }, 'Anthropic API key', key),
+    h('p', { class: 'hint' }, 'Stored only in this browser and sent straight to api.anthropic.com. For a public site, deploy the proxy in proxy/cloudflare-worker.js instead so visitors never need a key.'),
+    h('label', { class: 'lab' }, 'Proxy URL (instead of a key)', proxy),
+    h('div', { style: 'display:grid;grid-template-columns:1fr 1fr;gap:12px' }, h('label', { class: 'lab' }, 'Model', model), h('label', { class: 'lab' }, 'Thinking effort', effort)),
+    msg,
+    h('div', { class: 'actions' },
+      h('button', { class: 'pill-btn', onclick: async () => { const old = AI.cfg; AI.cfg = Object.assign({}, old, read()); msg.textContent = 'Testing…'; try { const m = await aiClient().models.retrieve(AI.cfg.model); msg.textContent = `Connected — ${m.display_name || m.id} is available.`; msg.className = 'ai-msg ok'; } catch (e) { msg.textContent = aiErrorText(e); msg.className = 'ai-msg bad'; } AI.cfg = old; } }, 'Test connection'),
+      h('button', { class: 'pill-btn primary', onclick: () => { AI.cfg = Object.assign(AI.cfg, read()); store.set('ai', AI.cfg); close(); toast(aiReady() ? 'AI designer connected.' : 'AI settings saved.'); if (onSaved) onSaved(); } }, 'Save'))));
+}
+
+/* ── hub: brief → generated proposals ── */
+const BRIEF_DEFAULT = { widthFt: '', depthFt: '', ceilingFt: '9', layout: 'any', people: 4, cooking: 'heavy', budget: 3, must: ['ro', 'microwave'], mood: '', openings: '', extra: '', count: 3 };
+const MUSTS = [['pantry', 'Tall pantry'], ['oven', 'Built-in oven'], ['dishwasher', 'Dishwasher'], ['loft', 'Loft storage'], ['ro', 'RO purifier'], ['microwave', 'Microwave'], ['seating', 'Breakfast seating'], ['bigfridge', 'Double-door fridge']];
+const MOODS = ['Warm wood & white quartz', 'All-white minimal', 'Sage green & brass', 'Navy & marble', 'Dark & dramatic', 'Colourful Moroccan'];
+function briefText(b) {
+  const lines = [`Design ${b.count} different kitchen options for this home. Return them in "designs".`, ''];
+  lines.push(`Room: ${b.widthFt && b.depthFt ? `${b.widthFt} ft wide (west–east) × ${b.depthFt} ft deep (north–south)` : 'size not given — assume a realistic urban Indian kitchen and say so in notes'}; ceiling ${b.ceilingFt || 9} ft.`);
+  if (b.openings) lines.push(`Doors and windows: ${b.openings}`);
+  lines.push(`Layout preference: ${b.layout === 'any' ? 'no preference — choose what suits the room' : b.layout}.`);
+  lines.push(`Household: ${b.people} people. Cooking: ${{ heavy: 'heavy Indian cooking every day (tadka, deep-frying, pressure cooker)', moderate: 'regular home cooking', light: 'light cooking, mostly reheating and quick meals' }[b.cooking]}.`);
+  lines.push(`Budget: about ₹${b.budget} lakh for units and appliances.`);
+  if (b.must.length) lines.push(`Must have: ${b.must.map(m => (MUSTS.find(x => x[0] === m) || [m, m])[1]).join(', ')}.`);
+  if (b.mood) lines.push(`Style: ${b.mood}.`);
+  if (b.extra) lines.push(`Also: ${b.extra}`);
+  return lines.join('\n');
+}
+function renderBrief() {
+  const root = $('#ai-brief'); if (!root) return;
+  const b = Object.assign({}, BRIEF_DEFAULT, store.get('brief', {})), save = () => store.set('brief', b);
+  const num = (k, attrs) => h('input', Object.assign({ class: 'field', value: b[k], inputmode: 'decimal', oninput: e => { b[k] = e.target.value; save(); } }, attrs));
+  const sel = (k, opts, label) => h('select', { class: 'field', 'aria-label': label, onchange: e => { b[k] = isNaN(+e.target.value) || e.target.value === '' ? e.target.value : +e.target.value; save(); } }, opts.map(([v, n]) => h('option', { value: v, selected: String(b[k]) === String(v) }, n)));
+  const status = h('div', { id: 'ai-brief-status' });
+  root.innerHTML = '';
+  root.append(h('div', { class: 'brief' },
+    h('div', { class: 'brief-grid' },
+      h('label', { class: 'lab' }, 'Kitchen size (feet, optional)', h('div', { class: 'dim' }, num('widthFt', { placeholder: 'width', 'aria-label': 'Width in feet' }), h('span', null, '×'), num('depthFt', { placeholder: 'depth', 'aria-label': 'Depth in feet' }), h('span', { class: 'muted' }, 'ceiling'), num('ceilingFt', { 'aria-label': 'Ceiling in feet', style: 'width:64px' }))),
+      h('label', { class: 'lab' }, 'Layout', sel('layout', [['any', 'Let the AI choose'], ['straight', 'Straight'], ['L-shaped', 'L-shaped'], ['U-shaped', 'U-shaped'], ['parallel', 'Parallel (galley)'], ['island', 'Island']], 'Layout')),
+      h('label', { class: 'lab' }, 'Cooking style', sel('cooking', [['heavy', 'Heavy Indian cooking'], ['moderate', 'Regular cooking'], ['light', 'Light cooking']], 'Cooking style')),
+      h('label', { class: 'lab' }, 'People', sel('people', [1, 2, 3, 4, 5, 6, 8].map(n => [n, n + (n === 1 ? ' person' : ' people')]), 'Household size')),
+      h('label', { class: 'lab' }, 'Budget (₹ lakh)', num('budget', { 'aria-label': 'Budget in lakh' })),
+      h('label', { class: 'lab' }, 'Options to generate', sel('count', [[1, '1 design'], [2, '2 designs'], [3, '3 designs']], 'Number of designs'))),
+    h('div', { class: 'lab' }, 'Must-haves', h('div', { class: 'pills' }, MUSTS.map(([id, n]) => h('button', { type: 'button', class: 'pillf' + (b.must.includes(id) ? ' on' : ''), 'aria-pressed': b.must.includes(id), onclick: e => { b.must = b.must.includes(id) ? b.must.filter(x => x !== id) : [...b.must, id]; save(); e.currentTarget.classList.toggle('on'); e.currentTarget.setAttribute('aria-pressed', b.must.includes(id)); } }, n)))),
+    h('label', { class: 'lab' }, 'Look and feel', h('input', { class: 'field', value: b.mood, placeholder: 'e.g. warm wood with white quartz', oninput: e => { b.mood = e.target.value; save(); } }),
+      h('div', { class: 'pills' }, MOODS.map(m => h('button', { type: 'button', class: 'pillf sm', onclick: () => { b.mood = m; save(); renderBrief(); } }, m)))),
+    h('label', { class: 'lab' }, 'Doors and windows', h('input', { class: 'field', value: b.openings, placeholder: 'e.g. door on the south wall near the corner, window on the north wall', oninput: e => { b.openings = e.target.value; save(); } })),
+    h('label', { class: 'lab' }, 'Anything else', h('textarea', { class: 'field', rows: 2, placeholder: 'e.g. mother-in-law is short — keep wall cabinets reachable; we make rotis daily', oninput: e => { b.extra = e.target.value; save(); } }, b.extra)),
+    h('div', { class: 'brief-go' }, h('button', { class: 'pill-btn primary big', onclick: () => generateProposals(b) }, h('span', { html: ico('edit', 20) }), aiReady() ? `Generate ${b.count} design${b.count > 1 ? 's' : ''}` : 'Connect Claude to generate'),
+      h('button', { class: 'pill-btn', onclick: () => showAISettings(renderBrief) }, 'AI settings'), h('span', { class: 'muted', style: 'font-size:13px' }, AI_MODELS.find(m => m[0] === AI.cfg.model)[1].split(' — ')[0] + (aiReady() ? '' : ' · not connected'))),
+    status));
+}
+async function generateProposals(b) {
+  if (!aiReady()) return showAISettings(() => { renderBrief(); if (aiReady()) generateProposals(b); });
+  if (AI.busy) return; AI.busy = true;
+  const st = $('#ai-brief-status'), pg = aiProgress(`Designing ${b.count} kitchen${b.count > 1 ? 's' : ''} with Claude`); st.innerHTML = ''; st.append(pg.el);
+  try {
+    const out = await aiCall('proposals', briefText(b), pg.update), designs = (out.designs || []).slice(0, 3);
+    if (!designs.length) throw new Error('Claude returned no designs. Try again or loosen the brief.');
+    const results = designs.map(dz => { const real = realizeDesign(dz); return docFromDesign(dz, real, { brief: b }); });
+    store.set('gen', { at: Date.now(), results }); st.innerHTML = ''; renderResults(); $('#ai-results').scrollIntoView({ behavior: 'smooth' });
+  } catch (e) { st.innerHTML = ''; st.append(h('div', { class: 'ai-error', role: 'alert' }, aiErrorText(e))); }
+  finally { AI.busy = false; AI.ctrl = null; }
+}
+function renderResults() {
+  const sec = $('#ai-results'), grid = $('#ai-results-grid'), gen = store.get('gen', null);
+  sec.hidden = !(gen && gen.results && gen.results.length); grid.innerHTML = ''; if (sec.hidden) return;
+  $('#ai-results-when').textContent = 'Generated ' + new Date(gen.at).toLocaleString();
+  gen.results.forEach(doc => {
+    const R = doc.room, issues = doc.ai.issues || [];
+    grid.append(h('div', { class: 'gcard' },
+      h('div', { class: 'thumb', html: planSVG(R, doc.items) }),
+      h('div', { class: 'meta' }, h('small', null, `${doc.ai.layout_type} · ${fmtHub(R)} · ${doc.items.length} units`), h('strong', null, doc.title), h('p', null, doc.ai.concept),
+        h('ul', { class: 'hl' }, (doc.ai.highlights || []).slice(0, 4).map(x => h('li', null, x))),
+        h('div', { class: 'gfoot' }, h('span', { class: 'pprice', html: priceHTML(docPrice(doc)) }), issues.length ? h('span', { class: 'adj', title: issues.join('\n') }, `${issues.length} auto-adjustment${issues.length > 1 ? 's' : ''}`) : null),
+        h('button', { class: 'pill-btn primary', onclick: () => openDoc(doc) }, 'Open in 3D ', h('span', { html: ico('arrow', 16) })))));
+  });
+}
+function openDoc(doc) { const d = docs(), copy = JSON.parse(JSON.stringify(doc)); copy.id = uid(); copy.updated = Date.now(); d[copy.id] = copy; store.set('designs', d); location.hash = `#ai/${copy.id}`; }
+
+/* ── planner: the AI tab (explain, ask for changes, undo) ── */
+const AI_QUICK = [['Fix every warning the planner shows.', 'Fix the warnings'], ['Bring the cost down by about 20% without losing the essentials.', 'Make it cheaper'], ['Add more storage, especially for bulk groceries and utensils.', 'More storage'], ['Try a completely different layout for this room.', 'Different layout'], ['Make the finishes lighter and brighter.', 'Lighter finishes']];
+function renderAITab(sc) {
+  const ai = S.ai || {}, box = h('div', { class: 'psec aitab' });
+  sc.append(box);
+  if (S.ai) {
+    box.append(h('div', { class: 'ai-card' }, h('small', { class: 'muted' }, `AI design · ${ai.layout_type || ''}`), h('h3', null, S.title), ai.concept ? h('p', null, ai.concept) : null,
+      ai.highlights && ai.highlights.length ? h('ul', { class: 'hl' }, ai.highlights.map(x => h('li', null, x))) : null,
+      ai.notes && ai.notes.length ? h('details', null, h('summary', null, `Designer notes (${ai.notes.length})`), h('ul', null, ai.notes.map(x => h('li', null, x)))) : null));
+    if (ai.change) box.append(h('div', { class: 'ai-change' }, h('b', null, 'Last change: '), ai.change));
+    if (ai.issues && ai.issues.length) box.append(h('details', { class: 'ai-issues' }, h('summary', null, `${ai.issues.length} placement adjustment${ai.issues.length > 1 ? 's' : ''} made by the planner`), h('ul', null, ai.issues.map(x => h('li', null, x)))));
+  } else box.append(h('div', { class: 'ai-card' }, h('h3', null, 'Ask the AI designer'), h('p', null, 'Describe what you want and Claude will lay out the whole kitchen in this room — or change the design you have.')));
+  if (!aiReady()) { box.append(h('button', { class: 'cta', style: 'margin:12px 0;width:100%', onclick: () => showAISettings(() => renderPanel(true)) }, 'Connect Claude')); return; }
+  const ta = h('textarea', { class: 'field', rows: 3, placeholder: S.items.length ? 'e.g. move the fridge next to the door and add a tall pantry' : 'e.g. an L-shaped kitchen for heavy cooking, budget 3 lakh, sage green', 'aria-label': 'Ask the AI designer' });
+  const status = h('div');
+  const send = text => { if (text.trim()) aiEdit(text.trim(), status); };
+  box.append(h('div', { class: 'ai-ask' }, ta, h('div', { class: 'pills' }, AI_QUICK.map(([q, l]) => h('button', { class: 'pillf sm', onclick: () => send(q) }, l))),
+    h('div', { style: 'display:flex;gap:8px;align-items:center' }, h('button', { class: 'pill-btn primary', onclick: () => send(ta.value) }, S.items.length ? 'Ask for changes' : 'Design this kitchen'),
+      S.aiUndo && S.aiUndo.length ? h('button', { class: 'pill-btn', onclick: aiUndo }, 'Undo AI change') : null,
+      h('button', { class: 'pill-btn sm', style: 'margin-left:auto', onclick: () => showAISettings(() => renderPanel(true)) }, 'Settings'))), status);
+}
+async function aiEdit(request, status) {
+  if (AI.busy) return; AI.busy = true;
+  const pg = aiProgress('Claude is reworking the design'); status.innerHTML = ''; status.append(pg.el);
+  const spec = currentSpec(), bad = warnCache.map(w => w.text);
+  const text = `Current kitchen design (same schema as your output; it includes the user's manual edits):\n${JSON.stringify(spec)}\n\n` +
+    (bad.length ? `Planner checks currently failing:\n- ${bad.join('\n- ')}\n\n` : 'All planner checks currently pass.\n\n') +
+    (S.ai && S.ai.issues && S.ai.issues.length ? `Adjustments the planner had to make last time:\n- ${S.ai.issues.join('\n- ')}\n\n` : '') +
+    `User request: ${request}\n\nReturn the complete revised design in "design" (keep whatever the user didn't ask to change, including room size and openings unless asked) and summarise what you changed in "change_summary".`;
+  try {
+    const out = await aiCall('edit', text, pg.update), dz = out.design; if (!dz) throw new Error('Claude returned no design.');
+    const real = realizeDesign(dz);
+    S.aiUndo = (S.aiUndo || []).concat([JSON.stringify(currentDoc())]).slice(-10);
+    const doc = docFromDesign(dz, real, { id: S.designId }); doc.ai.change = out.change_summary || '';
+    const undo = S.aiUndo; startDesign(doc); S.aiUndo = undo; S.tab = 'ai'; renderPanel(); queueSave();
+    toast(out.change_summary ? 'Updated: ' + out.change_summary.slice(0, 120) : 'Design updated.', { action: 'Undo', fn: aiUndo });
+  } catch (e) { status.innerHTML = ''; status.append(h('div', { class: 'ai-error', role: 'alert' }, aiErrorText(e))); }
+  finally { AI.busy = false; AI.ctrl = null; }
+}
+function aiUndo() {
+  const u = S.aiUndo || []; if (!u.length) return;
+  const prev = JSON.parse(u.pop()); startDesign(prev); S.aiUndo = u; S.tab = 'ai'; renderPanel(); queueSave(); toast('AI change undone.');
 }
 
 /* ═══════════════ 12 · wiring ═══════════════ */
@@ -1926,13 +2222,14 @@ function init() {
     const d = e.shiftKey ? .25 : .05, m = { ArrowLeft: [-d, 0], ArrowRight: [d, 0], ArrowUp: [0, -d], ArrowDown: [0, d] }[e.key];
     if (m) { e.preventDefault(); nudge(S.sel, m[0], m[1]); }
   });
-  $('#way-quick').onclick = () => $('#rooms-furnished').scrollIntoView({ behavior: 'smooth' });
+  $('#hero-go').onclick = () => $('#ai-brief').scrollIntoView({ behavior: 'smooth' });
   $('#way-build').onclick = startBuild;
+  $('#hdr-ai').onclick = () => showAISettings(() => { if (S.route === 'hub') renderBrief(); else renderPanel(true); });
   if (!store.get('cookies', false)) { $('#cookie').hidden = false; $('#cookie-ok').onclick = () => { store.set('cookies', true); $('#cookie').hidden = true; }; $('#cookie-set').onclick = () => { store.set('cookies', true); $('#cookie').hidden = true; toast('Only local storage is used.'); }; }
   window.addEventListener('hashchange', route);
   window.addEventListener('beforeunload', saveNow);
   updateBagCount(); route();
-  window.__interio = { S, CAM, GL, addItem, select, enterEdit, setView, PRODUCTS, KITCHENS, P, refreshWarnings, computeWarnings, shapeOf, priceOf }; // handy for debugging
+  window.__interio = { S, CAM, GL, AI, addItem, select, enterEdit, setView, PRODUCTS, P, refreshWarnings, computeWarnings, shapeOf, priceOf, realizeDesign, currentSpec, aiSchemas, aiSystem }; // handy for debugging
 }
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
 })();
