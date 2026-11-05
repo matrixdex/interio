@@ -1269,9 +1269,9 @@ function toggleFav(id) { S.favs.has(id) ? S.favs.delete(id) : S.favs.add(id); st
 /* ═══════════════ 7d · bag, summary, feedback, modal, toast ═══════════════ */
 function bagQty() { return S.bag.reduce((s, l) => s + l.qty, 0); }
 function updateBagCount() { for (const id of ['bag-count', 'hdr-bag-count']) { const b = $('#' + id); b.textContent = bagQty(); b.hidden = !bagQty(); } }
-function modal(content, wide) {
+function modal(content, wide, onClose) {
   const root = $('#modal-root'); root.innerHTML = '';
-  const close = () => { root.innerHTML = ''; document.removeEventListener('keydown', esc); };
+  let done = false; const close = () => { if (done) return; done = true; root.innerHTML = ''; document.removeEventListener('keydown', esc); if (onClose) onClose(); };
   const esc = e => { if (e.key === 'Escape') close(); };
   const box = h('div', { class: 'modal' + (wide ? ' wide' : ''), role: 'dialog', 'aria-modal': 'true' }, h('button', { class: 'xbtn', 'aria-label': 'Close', html: ico('close', 20), onclick: close }), content);
   const scrim = h('div', { class: 'scrim', onclick: e => { if (e.target === scrim) close(); } }, box); root.append(scrim);
@@ -1840,11 +1840,14 @@ function drawHero() {
    nudging small overlaps and reporting anything it couldn't place. Users then edit by hand or ask Claude for changes. */
 const AI_MODELS = [['claude-opus-5-5', 'Claude Opus 5.5 — best layouts'], ['claude-sonnet-5-5', 'Claude Sonnet 5.5 — faster'], ['claude-haiku-5-5', 'Claude Haiku 5.5 — fastest, cheapest']];
 const AI_EFFORTS = [['low', 'Low'], ['medium', 'Medium'], ['high', 'High'], ['xhigh', 'Extra high']];
-const AI = { cfg: Object.assign({ key: '', proxy: '', model: 'claude-opus-5-5', effort: 'high' }, store.get('ai', {})), ctrl: null, busy: false, sys: null, schemas: null };
-const aiReady = () => !!(AI.cfg.key || AI.cfg.proxy);
+const AI = { cfg: Object.assign({ mode: '', key: '', proxy: '', model: 'claude-opus-5-5', effort: 'high' }, store.get('ai', {})), ctrl: null, busy: false, sys: null, schemas: null };
+/* three ways to reach Claude: 'api' (your API key), 'bridge' (local Claude Code bridge or a key-holding proxy), 'manual' (copy & paste with any Claude chat) */
+const aiMode = () => AI.cfg.mode || (AI.cfg.proxy ? 'bridge' : AI.cfg.key ? 'api' : '');
+const aiReady = () => aiMode() === 'manual' || (aiMode() === 'bridge' && !!AI.cfg.proxy) || (aiMode() === 'api' && !!AI.cfg.key);
+const AI_MODE_NAME = { api: 'API key', bridge: 'Claude Code bridge', manual: 'Copy & paste with Claude' };
 function aiClient() {
   const A = window.Anthropic; if (!A) throw new Error('The Claude SDK did not load (vendor/anthropic-sdk.min.js).');
-  return AI.cfg.proxy ? new A({ apiKey: 'injected-by-proxy', baseURL: AI.cfg.proxy.replace(/\/+$/, ''), dangerouslyAllowBrowser: true })
+  return aiMode() === 'bridge' ? new A({ apiKey: 'not-used-by-bridge', baseURL: AI.cfg.proxy.replace(/\/+$/, ''), dangerouslyAllowBrowser: true, maxRetries: 0, timeout: 20 * 60 * 1000 })
     : new A({ apiKey: AI.cfg.key, dangerouslyAllowBrowser: true });
 }
 function aiErrorText(e) {
@@ -1948,6 +1951,7 @@ function aiSchemas() {
 /* ── the call: streamed, schema-constrained, cached system prompt, refusal fallback ── */
 async function aiCall(kind, userText, onProgress) {
   if (window.__interioMockAI) return window.__interioMockAI(kind, userText, onProgress); // test hook
+  if (aiMode() === 'manual') return aiManual(kind, userText);
   const client = aiClient(); AI.ctrl = new AbortController();
   const body = {
     model: AI.cfg.model, max_tokens: 64000,
@@ -1966,6 +1970,37 @@ async function aiCall(kind, userText, onProgress) {
   if (msg.stop_reason === 'max_tokens') throw new Error('The design was cut off before it finished. Ask for fewer options or a simpler kitchen.');
   const text = msg.content.filter(b => b.type === 'text').map(b => b.text).join('');
   try { return JSON.parse(text); } catch (e) { throw new Error('Claude returned a design the planner could not read. Please try again.'); }
+}
+
+/* ── manual mode: the user carries the exact prompt to a Claude chat and pastes the JSON back ── */
+function aiManualPrompt(kind, userText) {
+  return `${aiSystem()}\n\n## Output format\nReply with exactly one JSON object and nothing else — no prose, no code fences, no artifact. It must validate against this JSON Schema:\n${JSON.stringify(aiSchemas()[kind])}\n\n## Request\n${userText}`;
+}
+function parseAIReply(kind, raw) {
+  let t = String(raw || '').trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '');
+  const a = t.indexOf('{'), b = t.lastIndexOf('}'); if (a < 0 || b < a) throw new Error("That doesn't contain a JSON object. Copy Claude's whole reply.");
+  let j; try { j = JSON.parse(t.slice(a, b + 1)); } catch (e) { throw new Error('The JSON is incomplete or broken (' + e.message + '). Ask Claude to resend the full JSON only.'); }
+  if (kind === 'proposals' && !Array.isArray(j.designs)) { if (j.room && j.items) j = { designs: [j] }; else throw new Error('Expected {"designs": [...]} — this looks like a different answer.'); }
+  if (kind === 'edit' && !j.design) { if (j.room && j.items) j = { change_summary: '', design: j }; else throw new Error('Expected {"change_summary": ..., "design": {...}}.'); }
+  return j;
+}
+function aiManual(kind, userText) {
+  return new Promise((resolve, reject) => {
+    const prompt = aiManualPrompt(kind, userText), err = h('p', { class: 'ai-msg bad', role: 'alert' });
+    const reply = h('textarea', { class: 'field mono', rows: 7, placeholder: "Paste Claude's JSON reply here", 'aria-label': "Claude's reply" });
+    const copyBtn = h('button', { class: 'pill-btn primary', onclick: () => { (navigator.clipboard ? navigator.clipboard.writeText(prompt) : Promise.reject()).then(() => { copyBtn.textContent = 'Copied ✓'; }, () => { pre.focus(); pre.select(); copyBtn.textContent = 'Press Ctrl/⌘+C'; }); } }, 'Copy prompt');
+    const pre = h('textarea', { class: 'field mono', rows: 5, readonly: true, 'aria-label': 'Prompt to send' }, prompt);
+    let settled = false;
+    const close = modal(h('div', null, h('h3', null, 'Send this to Claude'),
+      h('ol', { class: 'steps' }, h('li', null, 'Copy the prompt (', String(Math.round(prompt.length / 1000)), 'k characters — it includes the catalogue and the output schema).'),
+        h('li', null, 'Paste it into a new chat at ', h('a', { href: 'https://claude.ai/new', target: '_blank', rel: 'noopener' }, 'claude.ai'), ' or into Claude Code, and send.'),
+        h('li', null, 'Copy the whole JSON reply and paste it below.')),
+      h('div', { style: 'display:flex;gap:8px;margin:8px 0' }, copyBtn), pre, reply, err,
+      h('div', { class: 'actions' }, h('button', { class: 'pill-btn', onclick: () => close() }, 'Cancel'),
+        h('button', { class: 'pill-btn primary', onclick: () => { try { const j = parseAIReply(kind, reply.value); settled = true; close(); resolve(j); } catch (e) { err.textContent = e.message; } } }, 'Use this reply'))), true,
+      () => { if (!settled) { settled = true; const e = new Error('Cancelled.'); e.name = 'AbortError'; reject(e); } });
+    void close;
+  });
 }
 
 /* ── spec → room + placed units (the deterministic "physics" step) ── */
@@ -2048,8 +2083,10 @@ function aiProgress(label) {
   const think = h('div', { class: 'ai-think' }), stat = h('div', { class: 'ai-stat' }, 'Connecting to Claude…');
   const cancel = h('button', { class: 'pill-btn sm', onclick: () => AI.ctrl && AI.ctrl.abort() }, 'Cancel');
   const el = h('div', { class: 'ai-progress', role: 'status', 'aria-live': 'polite' }, h('div', { class: 'ai-row' }, h('span', { class: 'ai-spin', 'aria-hidden': 'true' }), h('b', null, label), cancel), stat, think);
-  let buf = '';
-  return { el, update(e) {
+  let buf = '', got = false; const t0 = Date.now();
+  if (aiMode() === 'manual') { stat.textContent = 'Waiting for you to paste Claude\'s reply…'; cancel.hidden = true; }
+  const tick = setInterval(() => { if (!el.isConnected && Date.now() - t0 > 2000) return clearInterval(tick); if (!got && aiMode() !== 'manual') stat.textContent = `${aiMode() === 'bridge' ? 'Claude Code is designing' : 'Waiting for Claude'}… ${Math.round((Date.now() - t0) / 1000)} s`; }, 1000);
+  return { el, update(e) { got = true;
     if (e.thinking) { buf = (buf + e.thinking).slice(-420); think.textContent = '“' + buf.replace(/\s+/g, ' ').trim() + '”'; stat.textContent = 'Thinking through the layout…'; }
     if (e.chars) stat.textContent = `Drawing up the design… ${(e.chars / 1000).toFixed(1)}k characters`;
   } };
@@ -2057,23 +2094,30 @@ function aiProgress(label) {
 
 /* ── settings ── */
 function showAISettings(onSaved) {
-  const c = AI.cfg, msg = h('p', { class: 'ai-msg', role: 'status' });
+  const c = Object.assign({}, AI.cfg, { mode: aiMode() || 'bridge' }), msg = h('p', { class: 'ai-msg', role: 'status' });
   const key = h('input', { type: 'password', class: 'field', value: c.key, placeholder: 'sk-ant-…', autocomplete: 'off', 'aria-label': 'Anthropic API key' });
-  const proxy = h('input', { type: 'url', class: 'field', value: c.proxy, placeholder: 'https://your-proxy.workers.dev (optional)', 'aria-label': 'Proxy URL' });
+  const proxy = h('input', { type: 'url', class: 'field', value: c.proxy || 'http://127.0.0.1:8787', 'aria-label': 'Bridge or proxy URL' });
   const model = h('select', { class: 'field', 'aria-label': 'Model' }, AI_MODELS.map(([id, n]) => h('option', { value: id, selected: id === c.model }, n)));
   const effort = h('select', { class: 'field', 'aria-label': 'Effort' }, AI_EFFORTS.map(([id, n]) => h('option', { value: id, selected: id === c.effort }, n)));
-  const read = () => ({ key: key.value.trim(), proxy: proxy.value.trim(), model: model.value, effort: effort.value });
+  const read = () => ({ mode: c.mode, key: key.value.trim(), proxy: proxy.value.trim(), model: model.value, effort: effort.value });
+  const panes = {
+    bridge: h('div', null, h('p', null, 'Use your Claude subscription through ', h('b', null, 'Claude Code'), ' on this computer — no API key. Start the bridge in a terminal, from the repo folder:'),
+      h('pre', { class: 'cmd' }, 'node bridge/claude-code-bridge.mjs'),
+      h('p', { class: 'hint' }, `If you open the planner from a website (not a local file), add its address: --origin ${location.origin === 'null' ? 'https://you.github.io' : location.origin}. The same field also takes the URL of the Cloudflare proxy in proxy/.`),
+      h('label', { class: 'lab' }, 'Bridge or proxy URL', proxy)),
+    api: h('div', null, h('p', null, 'Call the Claude API directly with your Anthropic API key.'), h('label', { class: 'lab' }, 'Anthropic API key', key),
+      h('p', { class: 'hint' }, 'Stored only in this browser and sent straight to api.anthropic.com.')),
+    manual: h('div', null, h('p', null, 'No setup: the planner shows the exact prompt, you send it to Claude in ', h('b', null, 'claude.ai'), ' (or Claude Code) and paste the JSON reply back. Slower, but works with any Claude plan.'))
+  };
+  const seg = h('div', { class: 'seg3', role: 'tablist' });
+  const draw = () => { seg.innerHTML = ''; ['bridge', 'api', 'manual'].forEach(m => seg.append(h('button', { class: c.mode === m ? 'on' : '', role: 'tab', 'aria-selected': c.mode === m, onclick: () => { c.mode = m; draw(); } }, AI_MODE_NAME[m]))); Object.entries(panes).forEach(([m, el]) => el.hidden = m !== c.mode); test.hidden = c.mode === 'manual'; msg.textContent = ''; };
+  const test = h('button', { class: 'pill-btn', onclick: async () => { const old = AI.cfg; AI.cfg = Object.assign({}, old, read()); msg.textContent = 'Testing…'; msg.className = 'ai-msg'; try { const m = await aiClient().models.retrieve(AI.cfg.model); msg.textContent = `Connected — ${m.display_name || m.id}.`; msg.className = 'ai-msg ok'; } catch (e) { msg.textContent = aiErrorText(e) + (c.mode === 'bridge' ? ' Is the bridge running?' : ''); msg.className = 'ai-msg bad'; } AI.cfg = old; } }, 'Test connection');
   let close;
-  close = modal(h('div', null, h('h3', null, 'AI designer settings'),
-    h('p', { class: 'muted' }, 'Designs are generated by Claude. Use your own Anthropic API key, or a proxy that adds the key for you.'),
-    h('label', { class: 'lab' }, 'Anthropic API key', key),
-    h('p', { class: 'hint' }, 'Stored only in this browser and sent straight to api.anthropic.com. For a public site, deploy the proxy in proxy/cloudflare-worker.js instead so visitors never need a key.'),
-    h('label', { class: 'lab' }, 'Proxy URL (instead of a key)', proxy),
+  close = modal(h('div', null, h('h3', null, 'Connect the AI designer'), seg, panes.bridge, panes.api, panes.manual,
     h('div', { style: 'display:grid;grid-template-columns:1fr 1fr;gap:12px' }, h('label', { class: 'lab' }, 'Model', model), h('label', { class: 'lab' }, 'Thinking effort', effort)),
-    msg,
-    h('div', { class: 'actions' },
-      h('button', { class: 'pill-btn', onclick: async () => { const old = AI.cfg; AI.cfg = Object.assign({}, old, read()); msg.textContent = 'Testing…'; try { const m = await aiClient().models.retrieve(AI.cfg.model); msg.textContent = `Connected — ${m.display_name || m.id} is available.`; msg.className = 'ai-msg ok'; } catch (e) { msg.textContent = aiErrorText(e); msg.className = 'ai-msg bad'; } AI.cfg = old; } }, 'Test connection'),
-      h('button', { class: 'pill-btn primary', onclick: () => { AI.cfg = Object.assign(AI.cfg, read()); store.set('ai', AI.cfg); close(); toast(aiReady() ? 'AI designer connected.' : 'AI settings saved.'); if (onSaved) onSaved(); } }, 'Save'))));
+    msg, h('div', { class: 'actions' }, test,
+      h('button', { class: 'pill-btn primary', onclick: () => { AI.cfg = Object.assign(AI.cfg, read()); store.set('ai', AI.cfg); close(); toast(aiReady() ? `AI designer: ${AI_MODE_NAME[aiMode()]}.` : 'AI settings saved.'); if (onSaved) onSaved(); } }, 'Save'))));
+  draw();
 }
 
 /* ── hub: brief → generated proposals ── */
@@ -2113,7 +2157,7 @@ function renderBrief() {
     h('label', { class: 'lab' }, 'Doors and windows', h('input', { class: 'field', value: b.openings, placeholder: 'e.g. door on the south wall near the corner, window on the north wall', oninput: e => { b.openings = e.target.value; save(); } })),
     h('label', { class: 'lab' }, 'Anything else', h('textarea', { class: 'field', rows: 2, placeholder: 'e.g. mother-in-law is short — keep wall cabinets reachable; we make rotis daily', oninput: e => { b.extra = e.target.value; save(); } }, b.extra)),
     h('div', { class: 'brief-go' }, h('button', { class: 'pill-btn primary big', onclick: () => generateProposals(b) }, h('span', { html: ico('edit', 20) }), aiReady() ? `Generate ${b.count} design${b.count > 1 ? 's' : ''}` : 'Connect Claude to generate'),
-      h('button', { class: 'pill-btn', onclick: () => showAISettings(renderBrief) }, 'AI settings'), h('span', { class: 'muted', style: 'font-size:13px' }, AI_MODELS.find(m => m[0] === AI.cfg.model)[1].split(' — ')[0] + (aiReady() ? '' : ' · not connected'))),
+      h('button', { class: 'pill-btn', onclick: () => showAISettings(renderBrief) }, 'AI settings'), h('span', { class: 'muted', style: 'font-size:13px' }, (aiReady() ? `${AI_MODE_NAME[aiMode()]} · ${AI_MODELS.find(m => m[0] === AI.cfg.model)[1].split(' — ')[0]}` : 'Not connected yet'))),
     status));
 }
 async function generateProposals(b) {

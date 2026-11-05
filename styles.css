@@ -418,3 +418,10 @@ textarea.field{resize:vertical}
 @media (max-width:640px){.brief-grid{grid-template-columns:1fr}.brief{padding:16px}}
 .brief .pillf{background:#fff;box-shadow:inset 0 0 0 1px #d6d6d6}
 .brief .pillf.on{background:#111;box-shadow:none}
+
+.seg3{display:flex;background:var(--bg2);border-radius:var(--radius);padding:4px;gap:4px;margin:12px 0}
+.seg3 button{flex:1;height:36px;border-radius:var(--radius);font-weight:700;font-size:13px}
+.seg3 button.on{background:#111;color:#fff}
+.cmd{background:#111;color:#e8e8e8;border-radius:8px;padding:10px 12px;font-size:13px;overflow:auto;margin:8px 0}
+.field.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;margin-top:8px}
+.steps{padding-left:20px;line-height:1.6;margin:8px 0}

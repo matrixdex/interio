@@ -7,13 +7,28 @@ finishes, prices) and placement physics are deterministic. No build step and no 
 
 ## Connecting Claude
 
-Open **AI settings** (top right) and either
-- paste an Anthropic API key — stored only in that browser and sent straight to api.anthropic.com, or
-- for a public site, deploy `proxy/cloudflare-worker.js` (holds the key server-side) and paste its URL.
+Open **AI settings** (top right) and pick one of three connections:
 
-Default model: Claude Opus 5.5 (Sonnet 5.5 and Haiku 5.5 selectable), effort `high`. Requests stream,
-use structured outputs (a JSON schema built from the catalogue), cache the catalogue system prompt,
-and enable server-side refusal fallbacks.
+1. **Claude Code bridge — use your Claude subscription, no API key.** With Claude Code installed
+   and logged in, run from the repo folder:
+
+   ```bash
+   node bridge/claude-code-bridge.mjs
+   ```
+
+   Keep it running and choose *Claude Code bridge* with URL `http://127.0.0.1:8787`. Each request
+   runs `claude -p` headless with the app's system prompt and JSON schema (`--json-schema`), on the
+   model and effort you pick. If you open the planner from a website rather than the local file,
+   add its address: `--origin https://<you>.github.io`. The bridge binds to 127.0.0.1 and is for
+   your own use — don't expose it to others. (Windows: run it in WSL.)
+2. **API key** — calls the Claude API directly; the key is stored only in that browser.
+   For a public site, deploy `proxy/cloudflare-worker.js` and use its URL in the bridge/proxy field.
+3. **Copy & paste with Claude** — no setup: the planner shows the exact prompt (catalogue + schema +
+   request); send it in claude.ai or Claude Code and paste the JSON reply back.
+
+Defaults: Claude Opus 5.5, effort `high` (Sonnet 5.5 / Haiku 5.5 and lower effort are faster).
+API requests stream, use structured outputs, cache the catalogue system prompt and enable
+refusal fallbacks.
 
 ```
 ./
@@ -22,6 +37,7 @@ and enable server-side refusal fallbacks.
 ├── app.js              the whole SPA (catalogue, 3D scene, placement rules, UI, hub, routing)
 ├── vendor/three.min.js three.js r152 classic build (MIT)
 ├── vendor/anthropic-sdk.min.js  @anthropic-ai/sdk 1.5.0 (MIT), browser bundle
+├── bridge/claude-code-bridge.mjs  local bridge: the app → Claude Code (your subscription)
 ├── proxy/cloudflare-worker.js   optional key-holding proxy for public deployments
 ├── PLAN.md             prototype plan: deterministic core → tools → generative UI
 └── arch/               earlier material: findings.md spec of the room designer, screenshots, LICENSE
