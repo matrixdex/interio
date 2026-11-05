@@ -621,12 +621,14 @@ function updateWallVisibility() {
   GL.lamp.intensity = S.view === 'inside' ? .55 : 0;
   GL.hemi.intensity = S.view === 'inside' ? .6 : .72;
 }
-function zoomBy(dir) {
-  if (S.view === 'dollhouse') CAM.dist = clamp(CAM.dist * (dir > 0 ? .85 : 1 / .85), CAM.minD, CAM.maxD);
-  else if (S.view === 'top') CAM.tz = clamp(CAM.tz * (dir > 0 ? 1.18 : 1 / 1.18), .6, 4);
-  else CAM.fov = clamp(CAM.fov * (dir > 0 ? .88 : 1 / .88), 38, 100);
-  updateCamera(); markDirty();
+/* f < 1 zooms in, f > 1 zooms out (a multiplicative step, so gestures scale smoothly) */
+function zoomScale(f) {
+  if (S.view === 'dollhouse') CAM.dist = clamp(CAM.dist * f, CAM.minD, CAM.maxD);
+  else if (S.view === 'top') CAM.tz = clamp(CAM.tz / f, .6, 4);
+  else CAM.fov = clamp(CAM.fov * f, 38, 100);
+  updateCamera(); markDirty(); positionOverlay();
 }
+const zoomBy = dir => zoomScale(dir > 0 ? .85 : 1 / .85);
 function updateZoomButtons() {
   const inB = $('#zoom-in'), outB = $('#zoom-out'); if (!inB) return;
   let lo, hi;
@@ -930,7 +932,14 @@ function bindCanvas() {
   };
   cv.addEventListener('pointerup', end); cv.addEventListener('pointercancel', end);
   cv.addEventListener('contextmenu', e => e.preventDefault());
-  cv.addEventListener('wheel', e => { e.preventDefault(); zoomBy(e.deltaY < 0 ? 1 : -1); }, { passive: false });
+  cv.addEventListener('wheel', e => {
+    e.preventDefault();
+    // Trackpad pinch arrives as many small wheel events with ctrlKey set; a mouse wheel notch is one big event.
+    // Scale zoom by the actual delta (and damp it) instead of a fixed step per event.
+    const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1;
+    const dy = clamp(e.deltaY * unit, -60, 60), k = e.ctrlKey ? .0045 : .0012;
+    zoomScale(Math.exp(dy * k));
+  }, { passive: false });
 }
 function hoverCursor(e) {
   if (S.mode !== 'design' || DRAG.mode) return;
