@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Interio Kreativ — Room Designer</title>
+<meta name="description" content="A single-page 3D room designer: pick a room, drop in furniture, move, rotate, swap and restyle.">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- Global site header (always visible) -->
+<header id="site-header">
+  <a class="brand" href="#" aria-label="Interio home"><span class="brand-mark">i</span><span class="brand-name">Interio</span></a>
+  <nav class="site-nav" aria-label="Primary">
+    <a href="#">Products</a><a href="#">Rooms</a><a href="#">Offers</a><a href="#">Inspiration</a><a href="#" class="is-current">Design</a>
+  </nav>
+  <label class="site-search"><span class="sr">Search</span><input type="search" placeholder="What are you looking for?" disabled></label>
+  <div class="site-actions">
+    <button class="icon-btn" id="hdr-bag" aria-label="Shopping bag"><span data-ico="bag"></span><b class="badge" id="hdr-bag-count" hidden>0</b></button>
+  </div>
+</header>
+
+<!-- ───────────── HUB (landing) ───────────── -->
+<main id="hub">
+  <section class="hero">
+    <div class="hero-copy">
+      <p class="eyebrow"><span data-ico="edit"></span> Interio Kreativ</p>
+      <h1>Design your perfect space</h1>
+      <p>Visualise, plan and create the home of your dreams. Drop furniture into a 3D room, move it around and see how it all looks together — before you buy.</p>
+    </div>
+    <div class="hero-art" aria-hidden="true"><canvas id="hero-canvas" width="640" height="420"></canvas></div>
+  </section>
+
+  <section class="ways">
+    <div class="ways-head"><h2>Ways to start</h2><span class="muted" id="saved-hint"></span></div>
+    <div class="ways-grid">
+      <button class="way" id="way-quick"><span class="way-tag">Quick start</span><strong>Test ideas in an empty or furnished space</strong><span class="way-cta">Choose a room <i data-ico="arrow"></i></span></button>
+      <button class="way" id="way-build"><span class="way-tag">Customizable</span><strong>Build a room to match your layout at home</strong><span class="way-cta">Build a room <i data-ico="arrow"></i></span></button>
+      <button class="way" id="way-scan" aria-disabled="true"><span class="way-tag">Most personalised</span><strong>Visualize products together in your home</strong><span class="way-cta">Scan your room <small>(mobile app only)</small></span></button>
+    </div>
+  </section>
+
+  <section id="mydesigns" hidden>
+    <h2>My designs</h2>
+    <div class="card-grid" id="mydesigns-grid"></div>
+  </section>
+
+  <section id="rooms-empty">
+    <h2>Empty rooms</h2>
+    <div class="card-grid" id="grid-empty"></div>
+  </section>
+
+  <section id="rooms-furnished">
+    <h2>Furnished rooms</h2>
+    <div class="card-grid" id="grid-furnished"></div>
+  </section>
+
+  <footer class="site-footer">Interio Kreativ is a demo room designer. Products are dummy objects with procedural textures — prices are fictional.</footer>
+</main>
+
+<!-- ───────────── DESIGNER ───────────── -->
+<div id="designer" hidden>
+  <aside id="panel" aria-label="Side panel"></aside>
+
+  <section id="stage">
+    <!-- design header -->
+    <div id="design-header" class="topbar">
+      <button class="icon-btn" id="btn-sidebar" aria-label="Close side panel" title="Toggle side panel"><span data-ico="sidebar"></span></button>
+      <input id="design-title" class="title-input" value="Untitled Design" aria-label="Design title" maxlength="60">
+      <span class="grow"></span>
+      <button class="icon-btn" id="btn-bag" aria-label="Shopping bag"><span data-ico="bag"></span><b class="badge" id="bag-count" hidden>0</b></button>
+      <button class="icon-btn" id="btn-share" aria-label="Share this design"><span data-ico="share"></span></button>
+      <button class="icon-btn" id="btn-save" aria-label="Save options"><span data-ico="save"></span></button>
+      <span class="total" id="total">Rs.<b>0</b></span>
+      <button class="pill-btn primary" id="btn-summary" disabled>Summary <span data-ico="arrow"></span></button>
+      <span class="vsep"></span>
+      <button class="icon-btn" id="btn-exit" aria-label="Cancel and leave design"><span data-ico="close"></span></button>
+    </div>
+
+    <!-- edit-room header -->
+    <div id="edit-header" class="topbar" hidden>
+      <div class="seg-pair" id="undo-redo">
+        <button class="icon-btn" id="btn-undo" aria-label="Undo" disabled><span data-ico="undo"></span></button>
+        <button class="icon-btn" id="btn-redo" aria-label="Redo" disabled><span data-ico="redo"></span></button>
+      </div>
+      <div class="seg-pair modes" id="edit-modes">
+        <button id="mode-plan" class="on">Floor plan</button><button id="mode-ceil">Ceiling height</button>
+      </div>
+      <span class="grow"></span>
+      <button class="icon-btn" id="btn-edit-cancel" aria-label="Cancel editing"><span data-ico="close"></span></button>
+    </div>
+
+    <!-- 3D viewport -->
+    <div id="view">
+      <canvas id="gl" tabindex="0" aria-label="3D room canvas"></canvas>
+      <svg id="dims" aria-hidden="true"></svg>
+      <div id="labels" aria-hidden="true"></div>
+      <div id="handles"></div>
+
+      <div id="zoom" role="group" aria-label="Zoom">
+        <button id="zoom-in" aria-label="Zoom in"><span data-ico="plus"></span></button>
+        <button id="zoom-out" aria-label="Zoom out"><span data-ico="minus"></span></button>
+      </div>
+
+      <!-- floating controls for the selected object -->
+      <div id="itemfloat" hidden>
+        <div id="swatches" class="swatches"></div>
+        <div id="rotbox" class="rotbox" hidden>
+          <output id="rotval">0</output>
+          <div class="rottrack"><input id="rotslider" type="range" min="-180" max="180" step="1" value="0" aria-label="Rotation in degrees"></div>
+        </div>
+        <div id="pill" class="itempill" role="toolbar" aria-label="Item actions"></div>
+      </div>
+
+      <div id="strip" hidden></div>
+      <div id="viewchip" hidden></div>
+
+      <aside id="warn" class="warn-drawer" aria-label="Safety warnings and tips">
+        <button id="warn-toggle" aria-expanded="false"><span data-ico="warn"></span><span class="warn-label">Safety warnings &amp; tips</span><b class="badge" id="warn-count" hidden>0</b></button>
+        <div id="warn-body" hidden></div>
+      </aside>
+
+      <div id="toast" role="status" aria-live="polite" hidden></div>
+    </div>
+
+    <!-- bottom bar -->
+    <div id="bottombar">
+      <button class="bb on" id="bb-doll" title="Dollhouse view"><span data-ico="dollhouse"></span>Dollhouse</button>
+      <button class="bb" id="bb-top" title="Switch to top view"><span data-ico="top"></span>Top view</button>
+      <button class="bb" id="bb-side" aria-haspopup="true" title="Side views"><span data-ico="sides"></span>Side views <span data-ico="chev" class="mini"></span></button>
+      <span class="vsep"></span>
+      <button class="bb" id="bb-move" disabled aria-haspopup="true">Move to</button>
+      <button class="bb solid" id="bb-goback" hidden>Go back</button>
+      <span class="vsep"></span>
+      <button class="bb ico" id="bb-wall" aria-label="Wall color" title="Wall color"><span data-ico="palette"></span></button>
+      <button class="bb ico" id="bb-measure" aria-label="Show measurement options" title="Measurements"><span data-ico="ruler"></span></button>
+      <span class="vsep"></span>
+      <button class="bb" id="bb-edit"><span data-ico="edit"></span>Edit room</button>
+    </div>
+
+    <div id="popover-root"></div>
+  </section>
+</div>
+
+<div id="modal-root"></div>
+<div id="cookie" hidden>
+  <strong>You are in control of your own cookies</strong>
+  <p>This demo only stores your designs, favourites and bag in your browser (localStorage). Nothing leaves your device.</p>
+  <div><button class="pill-btn primary" id="cookie-ok">Ok</button> <button class="pill-btn" id="cookie-set">Cookies settings</button></div>
+</div>
+
+<script src="vendor/three.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
