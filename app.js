@@ -1838,7 +1838,8 @@ function drawHero() {
    Only the catalogue (products, options, finishes, prices) and the physics of placement are deterministic.
    Claude returns a design spec (JSON, schema-constrained); realizeDesign() turns it into a room + placed units,
    nudging small overlaps and reporting anything it couldn't place. Users then edit by hand or ask Claude for changes. */
-const AI_MODELS = [['claude-opus-5-5', 'Claude Opus 5.5 — best layouts'], ['claude-sonnet-5-5', 'Claude Sonnet 5.5 — faster'], ['claude-haiku-5-5', 'Claude Haiku 5.5 — fastest, cheapest']];
+const AI_MODELS = [['claude-opus-5-5', 'Claude Opus 5.5 — best layouts'], ['claude-sonnet-5-5', 'Claude Sonnet 5.5 — faster'], ['claude-haiku-5-5', 'Claude Haiku 5.5 — fastest, cheapest'], ['claude-opus-4-7', 'Claude Opus 4.7'], ['default', "Claude Code's default model (bridge only)"]];
+const FALLBACK_MODELS = ['claude-opus-5-5', 'claude-sonnet-5-5']; // models that accept fallbacks: "default"
 const AI_EFFORTS = [['low', 'Low'], ['medium', 'Medium'], ['high', 'High'], ['xhigh', 'Extra high']];
 const AI = { cfg: Object.assign({ mode: '', key: '', proxy: '', model: 'claude-opus-5-5', effort: 'high' }, store.get('ai', {})), ctrl: null, busy: false, sys: null, schemas: null };
 /* three ways to reach Claude: 'api' (your API key), 'bridge' (local Claude Code bridge or a key-holding proxy), 'manual' (copy & paste with any Claude chat) */
@@ -1960,7 +1961,8 @@ async function aiCall(kind, userText, onProgress) {
     system: [{ type: 'text', text: aiSystem(), cache_control: { type: 'ephemeral' } }],
     messages: [{ role: 'user', content: userText }]
   };
-  if (AI.cfg.model !== 'claude-haiku-5-5') { body.betas = ['server-side-fallback-2026-07-01']; body.fallbacks = 'default'; } // re-run declined requests on Anthropic's recommended fallback model
+  if (AI.cfg.model === 'default' && aiMode() !== 'bridge') throw new Error("“Claude Code's default model” only works with the Claude Code bridge — pick a model in AI settings.");
+  if (FALLBACK_MODELS.includes(AI.cfg.model) && aiMode() === 'api') { body.betas = ['server-side-fallback-2026-07-01']; body.fallbacks = 'default'; } // re-run declined requests on Anthropic's recommended fallback model
   const stream = client.beta.messages.stream(body, { signal: AI.ctrl.signal });
   let chars = 0;
   stream.on('thinking', d => onProgress && onProgress({ thinking: d }));
@@ -2111,7 +2113,7 @@ function showAISettings(onSaved) {
   };
   const seg = h('div', { class: 'seg3', role: 'tablist' });
   const draw = () => { seg.innerHTML = ''; ['bridge', 'api', 'manual'].forEach(m => seg.append(h('button', { class: c.mode === m ? 'on' : '', role: 'tab', 'aria-selected': c.mode === m, onclick: () => { c.mode = m; draw(); } }, AI_MODE_NAME[m]))); Object.entries(panes).forEach(([m, el]) => el.hidden = m !== c.mode); test.hidden = c.mode === 'manual'; msg.textContent = ''; };
-  const test = h('button', { class: 'pill-btn', onclick: async () => { const old = AI.cfg; AI.cfg = Object.assign({}, old, read()); msg.textContent = 'Testing…'; msg.className = 'ai-msg'; try { const m = await aiClient().models.retrieve(AI.cfg.model); msg.textContent = `Connected — ${m.display_name || m.id}.`; msg.className = 'ai-msg ok'; } catch (e) { msg.textContent = aiErrorText(e) + (c.mode === 'bridge' ? ' Is the bridge running?' : ''); msg.className = 'ai-msg bad'; } AI.cfg = old; } }, 'Test connection');
+  const test = h('button', { class: 'pill-btn', onclick: async () => { const old = AI.cfg; AI.cfg = Object.assign({}, old, read()); msg.textContent = 'Testing…'; msg.className = 'ai-msg'; try { const m = await aiClient().models.retrieve(AI.cfg.model === 'default' ? 'default' : AI.cfg.model); msg.textContent = `Connected — ${m.display_name || m.id}.`; msg.className = 'ai-msg ok'; } catch (e) { msg.textContent = aiErrorText(e) + (c.mode === 'bridge' ? ' Is the bridge running?' : ''); msg.className = 'ai-msg bad'; } AI.cfg = old; } }, 'Test connection');
   let close;
   close = modal(h('div', null, h('h3', null, 'Connect the AI designer'), seg, panes.bridge, panes.api, panes.manual,
     h('div', { style: 'display:grid;grid-template-columns:1fr 1fr;gap:12px' }, h('label', { class: 'lab' }, 'Model', model), h('label', { class: 'lab' }, 'Thinking effort', effort)),

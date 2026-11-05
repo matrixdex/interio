@@ -19,7 +19,9 @@ Open **AI settings** (top right) and pick one of three connections:
    Keep it running and choose *Claude Code bridge* with URL `http://127.0.0.1:8787`. Each request
    runs `claude -p` headless with the app's system prompt and JSON schema (`--json-schema`), on the
    model and effort you pick. If you open the planner from a website rather than the local file,
-   add its address: `--origin https://<you>.github.io`. The bridge binds to 127.0.0.1 and is for
+   add its address: `--origin https://<you>.github.io`. If your Claude Code can't run the model you pick
+   in the app, choose *Claude Code's default model* there, or start the bridge with a fixed model:
+   `--model opus` (alias for the newest Opus your Claude Code knows) or e.g. `--model claude-opus-4-7`. The bridge binds to 127.0.0.1 and is for
    your own use — don't expose it to others. (Windows: run it in WSL.)
 2. **API key** — calls the Claude API directly; the key is stored only in that browser.
    For a public site, deploy `proxy/cloudflare-worker.js` and use its URL in the bridge/proxy field.

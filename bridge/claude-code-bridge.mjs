@@ -26,6 +26,9 @@ import { join } from 'node:path';
 const arg = (name, def) => { const i = process.argv.indexOf('--' + name); return i > 0 ? process.argv[i + 1] : def; };
 const PORT = +arg('port', process.env.PORT || 8787);
 const CLAUDE = arg('claude', process.env.CLAUDE_BIN || 'claude');
+// --model forces one model for every request (e.g. opus, sonnet, claude-opus-4-7) — use it when your Claude Code
+// can't run the model the app asks for. Without it the app's choice is used ("default" = Claude Code's own default).
+const FORCE_MODEL = arg('model', process.env.BRIDGE_MODEL || '');
 // file:// pages send Origin "null"; local dev servers are localhost; add your GitHub Pages origin with --origin
 const ORIGINS = ['null', ...(arg('origin', process.env.ALLOW_ORIGINS || '')).split(',').map(s => s.trim()).filter(Boolean)];
 const allowed = o => !o || ORIGINS.includes(o) || /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(o);
@@ -59,7 +62,8 @@ async function handleMessages(req, res) {
   const dir = mkdtempSync(join(tmpdir(), 'interio-bridge-')), sysFile = join(dir, 'system.txt');
   writeFileSync(sysFile, system || 'You are a helpful assistant.');
   const args = ['-p', '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--no-session-persistence', '--tools', '', '--system-prompt-file', sysFile];
-  if (body.model) args.push('--model', body.model);
+  const model = FORCE_MODEL || (body.model && body.model !== 'default' ? body.model : '');
+  if (model) args.push('--model', model);
   if (effort) args.push('--effort', effort);
   if (schema) args.push('--json-schema', JSON.stringify(schema));
 
@@ -71,7 +75,7 @@ async function handleMessages(req, res) {
   const ping = setInterval(() => res.write(': working\n\n'), 10000);
 
   busy = true; const t0 = Date.now(); let lineBuf = '', result = null, stderr = '';
-  console.log(`[bridge] ${new Date().toLocaleTimeString()} request · model ${body.model || 'default'} · effort ${effort || 'default'} · schema ${schema ? 'yes' : 'no'}`);
+  console.log(`[bridge] ${new Date().toLocaleTimeString()} request · model ${model || "Claude Code's default"} · effort ${effort || 'default'} · schema ${schema ? 'yes' : 'no'}`);
   const child = spawn(CLAUDE, args, { cwd: dir, stdio: ['pipe', 'pipe', 'pipe'], env: process.env });
   req.on('close', () => { if (!res.writableEnded) { child.kill('SIGTERM'); console.log('[bridge] client disconnected — cancelled'); } });
   child.stdout.on('data', chunk => {
@@ -90,7 +94,8 @@ async function handleMessages(req, res) {
     if (res.writableEnded) return;
     const secs = ((Date.now() - t0) / 1000).toFixed(0);
     if (!result || result.is_error || result.subtype !== 'success') {
-      const msg = (result && (result.result || result.subtype)) || stderr.trim().split('\n').pop() || `claude exited with code ${code}`;
+      let msg = (result && (result.result || result.subtype)) || stderr.trim().split('\n').pop() || `claude exited with code ${code}`;
+      if (/model/i.test(msg) && /(not found|not available|invalid|access|support)/i.test(msg)) msg += ` — your Claude Code can't use ${model || 'that model'}. Pick another model in the app, or restart the bridge with --model opus (or the newest model you have).`;
       console.log(`[bridge] failed after ${secs}s: ${msg}`);
       ev('error', { error: { type: 'api_error', message: `Claude Code: ${msg}` } }); return res.end();
     }
@@ -115,6 +120,7 @@ http.createServer(async (req, res) => {
   apiError(res, 404, 'not_found_error', 'Only POST /v1/messages and GET /v1/models are bridged.');
 }).listen(PORT, '127.0.0.1', () => {
   console.log(`Interio ↔ Claude Code bridge on http://127.0.0.1:${PORT}`);
+  if (FORCE_MODEL) console.log(`Every request uses model: ${FORCE_MODEL}`);
   console.log(`Allowed origins: file:// pages, localhost${ORIGINS.length > 1 ? ', ' + ORIGINS.slice(1).join(', ') : ''}`);
   console.log('In the app: AI settings → Claude Code bridge → this URL. Ctrl+C to stop.');
 });
