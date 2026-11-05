@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Interio Kreativ — Room Designer</title>
-<meta name="description" content="A single-page 3D room designer: pick a room, drop in furniture, move, rotate, swap and restyle.">
+<title>Interio Kitchen Planner</title>
+<meta name="description" content="Plan a modular Indian kitchen in 3D: pick a layout, configure cabinets, choose appliances, countertops and tiles.">
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -25,9 +25,9 @@
 <main id="hub">
   <section class="hero">
     <div class="hero-copy">
-      <p class="eyebrow"><span data-ico="edit"></span> Interio Kreativ</p>
-      <h1>Design your perfect space</h1>
-      <p>Visualise, plan and create the home of your dreams. Drop furniture into a 3D room, move it around and see how it all looks together — before you buy.</p>
+      <p class="eyebrow"><span data-ico="edit"></span> Interio Kitchen Planner</p>
+      <h1>Plan your modular kitchen</h1>
+      <p>Start from a layout, then size every cabinet, pick shutters, countertop and tiles, and drop in your chimney, hob, sink and appliances — see it in 3D with a live price before you order.</p>
     </div>
     <div class="hero-art" aria-hidden="true"><canvas id="hero-canvas" width="640" height="420"></canvas></div>
   </section>
@@ -35,9 +35,9 @@
   <section class="ways">
     <div class="ways-head"><h2>Ways to start</h2><span class="muted" id="saved-hint"></span></div>
     <div class="ways-grid">
-      <button class="way" id="way-quick"><span class="way-tag">Quick start</span><strong>Test ideas in an empty or furnished space</strong><span class="way-cta">Choose a room <i data-ico="arrow"></i></span></button>
-      <button class="way" id="way-build"><span class="way-tag">Customizable</span><strong>Build a room to match your layout at home</strong><span class="way-cta">Build a room <i data-ico="arrow"></i></span></button>
-      <button class="way" id="way-scan" aria-disabled="true"><span class="way-tag">Most personalised</span><strong>Visualize products together in your home</strong><span class="way-cta">Scan your room <small>(mobile app only)</small></span></button>
+      <button class="way" id="way-quick"><span class="way-tag">Quick start</span><strong>Start from a straight, L, U, parallel or island layout</strong><span class="way-cta">Choose a layout <i data-ico="arrow"></i></span></button>
+      <button class="way" id="way-build"><span class="way-tag">Customizable</span><strong>Enter your kitchen's measurements, doors and windows</strong><span class="way-cta">Measure my kitchen <i data-ico="arrow"></i></span></button>
+      <button class="way" id="way-scan" aria-disabled="true"><span class="way-tag">Most personalised</span><strong>Book a free site-measurement visit</strong><span class="way-cta">Book a visit <small>(coming soon)</small></span></button>
     </div>
   </section>
 
@@ -46,17 +46,17 @@
     <div class="card-grid" id="mydesigns-grid"></div>
   </section>
 
-  <section id="rooms-empty">
-    <h2>Empty rooms</h2>
-    <div class="card-grid" id="grid-empty"></div>
-  </section>
-
   <section id="rooms-furnished">
-    <h2>Furnished rooms</h2>
+    <h2>Kitchen layouts</h2>
     <div class="card-grid" id="grid-furnished"></div>
   </section>
 
-  <footer class="site-footer">Interio Kreativ is a demo room designer. Products are dummy objects with procedural textures — prices are fictional.</footer>
+  <section id="rooms-empty">
+    <h2>Empty kitchens <span class="muted" style="font-size:15px;font-weight:400">— every Indian kitchen starts with a sink, a stove and a chimney</span></h2>
+    <div class="card-grid" id="grid-empty"></div>
+  </section>
+
+  <footer class="site-footer">Interio Kitchen Planner is a demo. Units and appliances are dummy objects with procedural textures — prices are indicative.</footer>
 </main>
 
 <!-- ───────────── DESIGNER ───────────── -->
@@ -67,7 +67,7 @@
     <!-- design header -->
     <div id="design-header" class="topbar">
       <button class="icon-btn" id="btn-sidebar" aria-label="Close side panel" title="Toggle side panel"><span data-ico="sidebar"></span></button>
-      <input id="design-title" class="title-input" value="Untitled Design" aria-label="Design title" maxlength="60">
+      <input id="design-title" class="title-input" value="My kitchen" aria-label="Design title" maxlength="60">
       <span class="grow"></span>
       <button class="icon-btn" id="btn-bag" aria-label="Shopping bag"><span data-ico="bag"></span><b class="badge" id="bag-count" hidden>0</b></button>
       <button class="icon-btn" id="btn-share" aria-label="Share this design"><span data-ico="share"></span></button>
@@ -146,7 +146,7 @@
 <div id="modal-root"></div>
 <div id="cookie" hidden>
   <strong>You are in control of your own cookies</strong>
-  <p>This demo only stores your designs, favourites and bag in your browser (localStorage). Nothing leaves your device.</p>
+  <p>This demo only stores your kitchens, saved units and bag in your browser (localStorage). Nothing leaves your device.</p>
   <div><button class="pill-btn primary" id="cookie-ok">Ok</button> <button class="pill-btn" id="cookie-set">Cookies settings</button></div>
 </div>
 
