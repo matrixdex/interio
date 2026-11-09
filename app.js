@@ -599,7 +599,7 @@ function initGL() {
   const canvas = $('#gl');
   const r = GL.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   r.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-  r.outputColorSpace = THREE.SRGBColorSpace; r.shadowMap.enabled = true; r.shadowMap.type = THREE.PCFSoftShadowMap; r.setClearColor(0xcfcfcf, 1);
+  r.outputColorSpace = THREE.SRGBColorSpace; r.shadowMap.enabled = true; r.shadowMap.type = THREE.PCFSoftShadowMap; r.setClearColor(0xdcd6cb, 1);
   const sc = GL.scene = new THREE.Scene();
   GL.persp = new THREE.PerspectiveCamera(30, 1, .1, 300);
   GL.ortho = new THREE.OrthographicCamera(-5, 5, 5, -5, .1, 200);
@@ -1279,6 +1279,11 @@ function drawDims() {
       for (const [a, b, len] of seg) { const pa = proj(a.x, 0, a.z), pb = proj(b.x, 0, b.z); line(pa, pb, ''); add((pa.x + pb.x) / 2, (pa.y + pb.y) / 2, fmtLen(len)); }
       if (S.mode === 'edit' && S.edit.sub === 'ceil') { const p = proj(R.x0, R.h / 2, c.z); add(p.x - 40, p.y, 'Ceiling ' + fmtLen(R.h)); }
     }
+    if (S.view === 'top' && S.mode === 'design') for (const it of S.items) {
+      const sh = shapeOf(it), p = P(it.pid), wallish = p.mount === 'wall', y = wallish ? 0 : sh.y0 + sh.h;
+      const pts = [[sh.x - sh.hw, sh.z - sh.hd], [sh.x + sh.hw, sh.z - sh.hd], [sh.x + sh.hw, sh.z + sh.hd], [sh.x - sh.hw, sh.z + sh.hd]].map(([x, z]) => proj(x, y, z));
+      s += `<polygon class="plan${wallish ? ' wallu' : ''}${it === S.sel ? ' sel' : ''}" points="${pts.map(q => q.x.toFixed(1) + ',' + q.y.toFixed(1)).join(' ')}"/>`;
+    }
     if (S.measure.prod) for (const it of S.items) { if (it.node && !it.node.visible) continue; const sh = shapeOf(it), q = proj(it.x, sh.y0 + sh.h + .05, it.z); add(q.x, q.y - 4, `${fmtCm(sh.w * 100)} × ${fmtCm(sh.d * 100)} × ${fmtCm(sh.h * 100)}`, 'prod'); }
     if (S.measure.space && S.mode === 'design') {
       const list = S.sel ? [S.sel] : S.items.filter(i => P(i.pid).mount === 'floor');
@@ -1544,12 +1549,12 @@ function route() {
   else history.replaceState(null, '', `#${S.templateId}/${S.designId}`);
 }
 function showDesigner() {
-  S.route = 'designer'; $('#hub').hidden = true; $('#designer').hidden = false; document.title = 'Design — Interio Kreativ';
+  S.route = 'designer'; $('#hub').hidden = true; $('#designer').hidden = false; document.title = 'Studio — Interio';
   if (!TH.r && !TH.failed) thumbInit(); resize(); markDirty();
 }
 function showHub() {
   if (S.route === 'designer') saveNow();
-  S.route = 'hub'; S.designId = null; $('#hub').hidden = false; $('#designer').hidden = true; document.title = 'Interio Kreativ — Room Designer'; closePopovers(); renderHub(); window.scrollTo(0, 0);
+  S.route = 'hub'; S.designId = null; $('#hub').hidden = false; $('#designer').hidden = true; document.title = 'Interio — Kitchen Atelier'; closePopovers(); renderHub(); window.scrollTo(0, 0);
 }
 
 /* ═══════════════ 11 · hub ═══════════════ */
@@ -1565,10 +1570,11 @@ function updateWallVisibility() {
     if (Math.abs(dx) > 1e-3) hide[dx > 0 ? 'E' : 'W'] = true;
   }
   for (const k of WALLS) refs.walls[k].visible = !hide[k];
-  for (const it of S.items) if (it.node) it.node.visible = !(P(it.pid).mount === 'wall' && it.wall && hide[it.wall]);
+  // plan (top) view reads like a drawing: wall-mounted units are lifted out (drawn dashed in the overlay) so the worktop shows
+  for (const it of S.items) if (it.node) it.node.visible = !(P(it.pid).mount === 'wall' && ((it.wall && hide[it.wall]) || (S.view === 'top' && S.mode === 'design')));
   refs.ceil.visible = S.view === 'inside';
   GL.lamp.intensity = S.view === 'inside' ? .55 : 0;
-  GL.hemi.intensity = S.view === 'inside' ? .6 : .72;
+  GL.hemi.intensity = S.view === 'inside' ? .6 : S.view === 'top' ? .5 : .72;
 }
 function pickItem(e) {
   setNDC(e);
@@ -1857,22 +1863,22 @@ function openTemplate(tid, did) {
 /* ── hub ── */
 function planSVG(R, items) {
   const W = R.x1 - R.x0, D = R.z1 - R.z0, k = 40, pad = 14, fl = FLOOR(R.floor), id = 'g' + Math.random().toString(36).slice(2, 7);
-  let s = `<svg viewBox="0 0 ${W * k + pad * 2} ${D * k + pad * 2}" aria-hidden="true"><defs><pattern id="${id}" width="12" height="12" patternUnits="userSpaceOnUse"><rect width="12" height="12" fill="${fl.c}"/><path d="M0 0h12M0 0v12" stroke="rgba(0,0,0,.1)"/></pattern></defs>`;
+  let s = `<svg viewBox="0 0 ${W * k + pad * 2} ${D * k + pad * 2}" aria-hidden="true"><defs><pattern id="${id}" width="12" height="12" patternUnits="userSpaceOnUse"><rect width="12" height="12" fill="#f7f4ee"/><path d="M0 0h12M0 0v12" stroke="rgba(20,20,18,.07)"/></pattern></defs>`;
   s += `<rect x="${pad}" y="${pad}" width="${W * k}" height="${D * k}" fill="url(#${id})"/>`;
   const rect = (it, d, fill, stroke, dash) => { const e = extOf(d, it.rot); return `<rect x="${(pad + (it.x - e.hw - R.x0) * k).toFixed(1)}" y="${(pad + (it.z - e.hd - R.z0) * k).toFixed(1)}" width="${(e.hw * 2 * k).toFixed(1)}" height="${(e.hd * 2 * k).toFixed(1)}" fill="${fill}" stroke="${stroke}" stroke-width="1.2"${dash ? ' stroke-dasharray="3 2"' : ''}/>`; };
   for (const it of items || []) {
     const p = P(it.pid); if (!p || p.mount !== 'floor') continue; const d = dimsOf(p, it.cfg, R);
-    if (p.role === 'stool') { s += `<circle cx="${pad + (it.x - R.x0) * k}" cy="${pad + (it.z - R.z0) * k}" r="${d.w * k / 2}" fill="#c9b79a" stroke="#8a7a60"/>`; continue; }
-    s += rect(it, d, p.essential === 'sink' ? '#a9cbe0' : p.essential === 'stove' ? '#55565a' : p.role === 'fridge' || p.role === 'tall' ? '#c3cad2' : '#e2ddd3', '#7d766b');
+    if (p.role === 'stool') { s += `<circle cx="${pad + (it.x - R.x0) * k}" cy="${pad + (it.z - R.z0) * k}" r="${d.w * k / 2}" fill="#f2eee7" stroke="#141412" stroke-width=".8"/>`; continue; }
+    s += rect(it, d, p.essential === 'sink' ? '#d9dde0' : p.essential === 'stove' ? '#141412' : p.role === 'fridge' || p.role === 'tall' ? '#cfc7b8' : '#ebe5da', '#141412');
   }
-  for (const it of items || []) { const p = P(it.pid); if (p && p.essential === 'chimney') s += rect(it, dimsOf(p, it.cfg, R), 'none', '#c4362b', true); }
-  s += `<rect x="${pad}" y="${pad}" width="${W * k}" height="${D * k}" fill="none" stroke="#333" stroke-width="5"/>`;
+  for (const it of items || []) { const p = P(it.pid); if (p && p.essential === 'chimney') s += rect(it, dimsOf(p, it.cfg, R), 'none', '#a8834f', true); }
+  s += `<rect x="${pad}" y="${pad}" width="${W * k}" height="${D * k}" fill="none" stroke="#141412" stroke-width="4"/>`;
   for (const f of R.feats) {
     const wk = f.w * k, o = { N: [pad + (f.u - f.w / 2) * k, pad], S: [pad + (f.u - f.w / 2) * k, pad + D * k], W: [pad, pad + (f.u - f.w / 2) * k], E: [pad + W * k, pad + (f.u - f.w / 2) * k] }[f.wall];
     const tr = { N: `translate(${o[0]} ${o[1]})`, S: `translate(${o[0]} ${o[1]}) scale(1 -1)`, W: `translate(${o[0]} ${o[1]}) matrix(0 1 1 0 0 0)`, E: `translate(${o[0]} ${o[1]}) matrix(0 1 -1 0 0 0)` }[f.wall];
-    s += `<g transform="${tr}"><line x1="0" y1="0" x2="${wk}" y2="0" stroke="#fff" stroke-width="7"/>`;
-    if (f.kind === 'door') { const n = STYLE[f.style].leaves >= 2 ? 2 : 1, lw = wk / n; for (let i = 0; i < n; i++) { const x0 = i * lw; s += i % 2 ? `<path d="M${x0 + lw} 0v${lw}M${x0} 0A${lw} ${lw} 0 0 0 ${x0 + lw} ${lw}" fill="none" stroke="#555" stroke-width="1.5"/>` : `<path d="M${x0} 0v${lw}M${x0 + lw} 0A${lw} ${lw} 0 0 1 ${x0} ${lw}" fill="none" stroke="#555" stroke-width="1.5"/>`; } }
-    else s += `<line x1="0" y1="-2" x2="${wk}" y2="-2" stroke="#4a90c0" stroke-width="2"/><line x1="0" y1="2" x2="${wk}" y2="2" stroke="#4a90c0" stroke-width="2"/>`;
+    s += `<g transform="${tr}"><line x1="0" y1="0" x2="${wk}" y2="0" stroke="#f7f4ee" stroke-width="6"/>`;
+    if (f.kind === 'door') { const n = STYLE[f.style].leaves >= 2 ? 2 : 1, lw = wk / n; for (let i = 0; i < n; i++) { const x0 = i * lw; s += i % 2 ? `<path d="M${x0 + lw} 0v${lw}M${x0} 0A${lw} ${lw} 0 0 0 ${x0 + lw} ${lw}" fill="none" stroke="#141412" stroke-width=".8"/>` : `<path d="M${x0} 0v${lw}M${x0 + lw} 0A${lw} ${lw} 0 0 1 ${x0} ${lw}" fill="none" stroke="#141412" stroke-width=".8"/>`; } }
+    else s += `<line x1="0" y1="-2" x2="${wk}" y2="-2" stroke="#a8834f" stroke-width="1.4"/><line x1="0" y1="2" x2="${wk}" y2="2" stroke="#a8834f" stroke-width="1.4"/>`;
     s += '</g>';
   }
   return s + '</svg>';
@@ -1891,24 +1897,77 @@ function renderHub() {
     const del = h('button', { class: 'pill-btn sm', style: 'margin:0 14px 14px;align-self:flex-start', onclick: e => { e.stopPropagation(); const m = docs(); delete m[d.id]; store.set('designs', m); renderHub(); } }, 'Delete');
     const wrap = h('div', { class: 'rcard', style: 'padding:0;border:0;box-shadow:none' }); c.style.width = '100%'; wrap.append(c, del); gm.append(wrap);
   });
-  drawHero(); hydrateIcons($('#hub'));
+  drawHero(); renderSystem(); hydrateIcons($('#hub'));
 }
 const fmtHub = R => `${(R.x1 - R.x0).toFixed(1)} × ${(R.z1 - R.z0).toFixed(1)} m`;
+/* hero: an axonometric drawing of a kitchen being "printed" module by module — each one rises from its footprint
+   under a brass print line, then gets its part code. Loops; static (fully printed) when motion is reduced. */
+const HERO = { raf: 0, t0: 0 };
+const HERO_MODS = [ // x, z, w, d, h, y0, kind, code   (metres; back run along x at z=0, return run along z at x=0)
+  [0, 0, .6, .6, 2.1, 0, 'tall', 'TALL60'], [.6, 0, .6, .6, .86, 0, 'drawers', 'B60·3DR'], [1.2, 0, .75, .6, .86, 0, 'hob', 'HOB75·5'],
+  [1.95, 0, .45, .6, .86, 0, 'door', 'B45·1D'], [2.4, 0, .9, .6, .86, 0, 'sink', 'SINK90'], [3.3, 0, .6, .6, .86, 0, 'drawers', 'B60·2DR'],
+  [0, .6, .6, .6, .86, 0, 'door', 'B60·2D'], [0, 1.2, .6, .7, 1.75, 0, 'fridge', 'FRIDGE·2D'],
+  [1.27, 0, .6, .42, .5, 1.62, 'chimney', 'CHIM60'], [1.95, 0, .45, .35, .7, 1.45, 'wall', 'W45'], [3.3, 0, .6, .35, .7, 1.45, 'wall', 'W60'], [.6, 0, .6, .35, .7, 1.45, 'wall', 'W60']
+];
 function drawHero() {
-  const cv = $('#hero-canvas'), g = cv.getContext('2d'), w = cv.width; g.clearRect(0, 0, w, cv.height);
-  const iso = (x, y, z) => [w / 2 + (x - z) * 46, 210 + (x + z) * 26 - y * 52];
-  const poly = (pts, fill) => { g.beginPath(); pts.forEach((p, i) => i ? g.lineTo(...p) : g.moveTo(...p)); g.closePath(); g.fillStyle = fill; g.fill(); };
-  const box = (x, y, z, W, Hh, D, top, l, r) => { poly([iso(x, y + Hh, z), iso(x + W, y + Hh, z), iso(x + W, y + Hh, z + D), iso(x, y + Hh, z + D)], top); poly([iso(x, y, z + D), iso(x + W, y, z + D), iso(x + W, y + Hh, z + D), iso(x, y + Hh, z + D)], l); poly([iso(x + W, y, z), iso(x + W, y, z + D), iso(x + W, y + Hh, z + D), iso(x + W, y + Hh, z)], r); };
-  poly([iso(0, 0, 0), iso(6, 0, 0), iso(6, 0, 4), iso(0, 0, 4)], '#e9e1d0');
-  for (let i = 1; i < 10; i++) { g.strokeStyle = 'rgba(0,0,0,.08)'; g.beginPath(); g.moveTo(...iso(i * .6, 0, 0)); g.lineTo(...iso(i * .6, 0, 4)); g.stroke(); g.beginPath(); g.moveTo(...iso(0, 0, i * .45)); g.lineTo(...iso(6, 0, i * .45)); g.stroke(); }
-  poly([iso(0, 0, 0), iso(6, 0, 0), iso(6, 3, 0), iso(0, 3, 0)], '#efede8'); poly([iso(0, 0, 0), iso(0, 0, 4), iso(0, 3, 4), iso(0, 3, 0)], '#e3e0d9');
-  poly([iso(.2, 1.05, 0), iso(5.8, 1.05, 0), iso(5.8, 1.7, 0), iso(.2, 1.7, 0)], '#dfe7e2');
-  poly([iso(3.4, 1.85, 0), iso(4.6, 1.85, 0), iso(4.6, 2.85, 0), iso(3.4, 2.85, 0)], '#cfe6f2');
-  box(.2, 0, 0, 5.6, .95, 1.1, '#2a2a2e', '#8fa58a', '#7d9378'); box(.2, .95, 0, 5.6, .08, 1.18, '#1f1f22', '#333', '#2a2a2a');
-  box(1.6, 1.03, .25, 1.1, .02, .8, '#0f0f10', '#0f0f10', '#0f0f10');
-  box(.2, 1.85, 0, 1.2, 1.2, .62, '#7d9378', '#8fa58a', '#7d9378'); box(4.8, 1.85, 0, 1, 1.2, .62, '#7d9378', '#8fa58a', '#7d9378');
-  box(1.75, 1.9, 0, .8, .25, .8, '#b9bcc0', '#c8cbcf', '#a9acb0'); box(2.0, 2.15, 0, .3, .85, .3, '#b9bcc0', '#c8cbcf', '#a9acb0');
-  box(3.7, 1.03, .15, .6, .02, .55, '#b8bcc1', '#9a9ea3', '#9a9ea3');
+  const cv = $('#hero-canvas'); if (!cv) return;
+  const reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  cancelAnimationFrame(HERO.raf); HERO.t0 = performance.now();
+  const frame = now => {
+    if (!cv.isConnected || $('#hub').hidden) return;
+    const dpr = Math.min(2, window.devicePixelRatio || 1), cw = cv.clientWidth || 640, ch = cv.clientHeight || 420;
+    if (cv.width !== Math.round(cw * dpr)) { cv.width = Math.round(cw * dpr); cv.height = Math.round(ch * dpr); }
+    const g = cv.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, cw, ch);
+    const css = getComputedStyle(document.documentElement), INK = css.getPropertyValue('--ink').trim() || '#141412', BRASS = css.getPropertyValue('--brass').trim() || '#a8834f';
+    const k = Math.min(cw / 6.3, ch / 6.6), ox = cw / 2 - .69 * k, oy = ch / 2 - .2 * k; // fits the 4.2 × 2.6 × 2.45 m drawing plus its labels
+    const iso = (x, y, z) => [ox + (x - z) * k * .866, oy + (x + z) * k * .5 - y * k];
+    const path = (pts, fill, stroke = INK, lw = .8) => { g.beginPath(); pts.forEach((p, i) => i ? g.lineTo(...iso(...p)) : g.moveTo(...iso(...p))); g.closePath(); if (fill) { g.fillStyle = fill; g.fill(); } if (stroke) { g.strokeStyle = stroke; g.lineWidth = lw; g.stroke(); } };
+    const seg = (a, b, stroke = INK, lw = .6) => { g.beginPath(); g.moveTo(...iso(...a)); g.lineTo(...iso(...b)); g.strokeStyle = stroke; g.lineWidth = lw; g.stroke(); };
+    // blueprint floor grid (10 cm module, 60 cm major)
+    g.globalAlpha = .55; for (let i = 0; i <= 42; i++) { const x = i * .1; seg([x, 0, 0], [x, 0, 2.6], INK, i % 6 ? .15 : .4); } for (let i = 0; i <= 26; i++) { const z = i * .1; seg([0, 0, z], [4.2, 0, z], INK, i % 6 ? .15 : .4); } g.globalAlpha = 1;
+    // back and side walls as hairline elevations
+    path([[0, 0, 0], [4.2, 0, 0], [4.2, 2.45, 0], [0, 2.45, 0]], 'rgba(255,255,255,.35)', INK, .5); path([[0, 0, 0], [0, 0, 2.6], [0, 2.45, 2.6], [0, 2.45, 0]], 'rgba(255,255,255,.2)', INK, .5);
+    const t = reduce ? 1e9 : ((now - HERO.t0) / 1000) % 11, step = .55;
+    const floorRank = HERO_MODS.map((m, i) => [m, i]).filter(([m]) => !m[5]).sort((a, b) => iso(a[0][0] + a[0][2] / 2, 0, a[0][1] + a[0][3] / 2)[0] - iso(b[0][0] + b[0][2] / 2, 0, b[0][1] + b[0][3] / 2)[0]).map(([, i]) => i);
+    const order = HERO_MODS.map((m, i) => [m, i]).sort((a, b) => (a[0][0] + a[0][1]) - (b[0][0] + b[0][1]) || a[0][5] - b[0][5]);
+    for (const [[x, z, w, d, hgt, y0, kind, code], i] of order) {
+      const p = clamp((t - .4 - i * step) / .7, 0, 1), e = 1 - Math.pow(1 - p, 3); if (p <= 0) { if (!y0) path([[x, 0, z], [x + w, 0, z], [x + w, 0, z + d], [x, 0, z + d]], null, BRASS, .6); continue; }
+      const H = hgt * e, y1 = y0 + H, front = { tall: '#e9e4da', drawers: '#e9e4da', door: '#e9e4da', hob: '#e9e4da', sink: '#e9e4da', fridge: '#d9dcdc', chimney: '#cfd2d4', wall: '#ece8e0' }[kind];
+      path([[x, y1, z + d], [x + w, y1, z + d], [x + w, y0, z + d], [x, y0, z + d]], front);            // front
+      path([[x + w, y1, z], [x + w, y1, z + d], [x + w, y0, z + d], [x + w, y0, z]], '#cdc6b9');         // side
+      path([[x, y1, z], [x + w, y1, z], [x + w, y1, z + d], [x, y1, z + d]], kind === 'hob' ? '#1d1d1c' : '#f6f3ee'); // top
+      if (p >= 1) { // details once printed
+        if (kind === 'drawers') for (const f of [.33, .62]) seg([x + .02, y0 + hgt * f, z + d], [x + w - .02, y0 + hgt * f, z + d], INK, .5);
+        if (kind === 'door' || kind === 'tall' || kind === 'fridge' || kind === 'wall') seg([x + w / 2, y0 + .04, z + d], [x + w / 2, y0 + hgt - .04, z + d], INK, .5);
+        if (kind === 'sink') path([[x + .1, y1, z + .1], [x + w - .1, y1, z + .1], [x + w - .1, y1, z + d - .12], [x + .1, y1, z + d - .12]], '#c9ccce', INK, .5);
+        if (kind === 'hob') for (const [bx, bz] of [[.2, .18], [.55, .18], [.2, .42], [.55, .42], [.375, .3]]) { const [cx, cy] = iso(x + bx, y1, z + bz); g.beginPath(); g.ellipse(cx, cy, k * .07, k * .04, 0, 0, Math.PI * 2); g.strokeStyle = '#8b8b88'; g.lineWidth = .8; g.stroke(); }
+        // part code with a leader line
+        if (y0) continue; // label floor modules only (wall units sit above them)
+        const top = iso(x + w / 2, y0 + hgt, z + d / 2), lx = top[0], rank = floorRank.indexOf(i), ly = iso(0, 2.75, 0)[1] - 18 + (rank % 3) * 13;
+        g.globalAlpha = clamp((t - .4 - i * step - .7) / .4, 0, 1);
+        g.strokeStyle = INK; g.lineWidth = .5; g.beginPath(); g.moveTo(lx, top[1] - 2); g.lineTo(lx, ly + 4); g.stroke();
+        g.fillStyle = INK; g.font = '500 9px "JetBrains Mono", ui-monospace, monospace'; g.textAlign = 'center'; g.fillText(code, lx, ly);
+        g.globalAlpha = 1;
+      } else { // the print line
+        seg([x - .03, y1, z + d], [x + w + .03, y1, z + d], BRASS, 1.6); seg([x + w, y1, z - .03], [x + w, y1, z + d + .03], BRASS, 1.6);
+      }
+    }
+    if (!reduce) HERO.raf = requestAnimationFrame(frame);
+  };
+  HERO.raf = requestAnimationFrame(frame);
+}
+/* hub · the System: every module, its part code (the KDL token) and its sizes — the kitchen as a kit of parts */
+const SYSTEM_MODS = [['base-cab', 'B', 'b30–b120 · .1d .2d .2dr .3dr .4dr .open .blind'], ['sink-unit', 'SINK', 'sink60–sink120 · .single .double .drainer'], ['hob-unit', 'HOB', 'hob60–hob90 · .2–.5 burners · .oven'],
+  ['tall', 'TALL', 'tall45 tall60 · .pantry .oven .broom'], ['fridge', 'FRIDGE', 'fridge · .single .double .sxs'], ['dishwasher', 'DW', 'dw45 dw60'], ['chimney', 'CHIM', 'placed by the system over every hob'], ['wall-cab', 'W', 'placed by the system over base runs'],
+  ['loft', 'LOFT', 'ADD loft · above tall units'], ['microwave', 'MW', 'ADD microwave · finds free worktop'], ['ro', 'RO', 'ADD ro · hung beside the sink'], ['stool', 'STOOL', 'ADD stools3 · behind the island']];
+function renderSystem() {
+  const grid = $('#system-grid'); if (!grid || grid.childElementCount) return;
+  if (!TH.r && !TH.failed) thumbInit();
+  SYSTEM_MODS.forEach(([pid, code, syn], i) => { const p = P(pid); if (!p) return; const d = dimsOf(p, defCfg(p));
+    grid.append(h('div', { class: 'mod' }, h('span', { class: 'mod-no' }, String(i + 1).padStart(2, '0')), h('div', { class: 'mod-pic' }, thumbImg(pid, 0, '', defCfg(p))),
+      h('b', { class: 'mod-code' }, code), h('span', { class: 'mod-name' }, p.name.toLowerCase()), h('span', { class: 'mod-dim' }, `${Math.round(d.w * 100)} × ${Math.round(d.d * 100)} × ${Math.round(d.h * 100)}`), h('span', { class: 'mod-syn' }, syn))); });
+  const g = (window.INTERIO_GALLERY || [])[1], spec = $('#kdl-spec');
+  if (g && spec) { try { const doc = kdlToDoc(g.kdl, {}); spec.innerHTML = ''; const n = g.kdl.trim().split('\n').length, word = ['', '', '', '', '', '', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen'][n] || n; const hd = $('.kdl-caption h3'); if (hd) hd.textContent = `${word} lines make a kitchen`; spec.append(h('pre', { class: 'kdl-code' }, g.kdl.split('\n').map((l, i) => h('span', null, h('i', null, String(i + 1).padStart(2, '0')), l))), h('div', { class: 'kdl-plan', html: planSVG(doc.room, doc.items) })); } catch (e) { /* ignore */ } }
 }
 
 /* ═══════════════ 13 · AI designer — Claude generates rooms, layouts and whole kitchen designs ═══════════════
@@ -2081,8 +2140,9 @@ function renderBrief() {
       h('div', { class: 'pills' }, MOODS.map(m => h('button', { type: 'button', class: 'pillf sm', onclick: () => { b.mood = m; save(); renderBrief(); } }, m)))),
     h('label', { class: 'lab' }, 'Doors and windows', h('input', { class: 'field', value: b.openings, placeholder: 'e.g. door on the south wall near the corner, window on the north wall', oninput: e => { b.openings = e.target.value; save(); } })),
     h('label', { class: 'lab' }, 'Anything else', h('textarea', { class: 'field', rows: 2, placeholder: 'e.g. mother-in-law is short — keep wall cabinets reachable; we make rotis daily', oninput: e => { b.extra = e.target.value; save(); } }, b.extra)),
-    h('div', { class: 'brief-go' }, h('button', { class: 'pill-btn primary big', onclick: () => generateProposals(b) }, h('span', { html: ico('edit', 20) }), aiReady() ? `Generate ${b.count} design${b.count > 1 ? 's' : ''}` : 'Connect Claude to generate'),
-      h('button', { class: 'pill-btn', onclick: () => showAISettings(renderBrief) }, 'AI settings'), h('span', { class: 'muted', style: 'font-size:13px' }, (aiReady() ? `${AI_MODE_NAME[aiMode()]} · ${(AI_MODELS.find(m => m[0] === AI.cfg.model) || ['', AI.cfg.model])[1].split(' — ')[0]}` : 'Not connected yet'))),
+    h('div', { class: 'brief-go' }, h('button', { class: 'pill-btn primary big', onclick: () => generateProposals(b) }, aiReady() ? `Compose ${aiMode() === 'manual' ? 1 : b.count} new design${b.count > 1 && aiMode() !== 'manual' ? 's' : ''}` : `Compose from the collection`, h('span', { html: ico('arrow', 18) })),
+      h('button', { class: 'pill-btn', onclick: () => showAISettings(renderBrief) }, aiReady() ? 'AI settings' : 'Connect Claude'),
+      h('span', { class: 'brief-note' }, aiReady() ? `${AI_MODE_NAME[aiMode()]} · ${(AI_MODELS.find(m => m[0] === AI.cfg.model) || ['', AI.cfg.model])[1].split(' — ')[0]}` : 'Free · instant · fitted to your room. Connect Claude for designs no one has seen.')),
     status));
 }
 function openDoc(doc) { const d = docs(), copy = JSON.parse(JSON.stringify(doc)); copy.id = uid(); copy.updated = Date.now(); d[copy.id] = copy; store.set('designs', d); location.hash = `#ai/${copy.id}`; }
@@ -2206,7 +2266,7 @@ function runKeepOut(wall, d) {
   for (const o of d.openings.filter(o => o.kind === 'door')) {
     const hw = 45;
     if (o.wall === wall) { out.push([o.c - hw - 10, o.c + hw + 10]); continue; }
-    const strip = { E: [W - 65, W], W: [0, 65], N: [0, 65], S: [D - 65, D] }[wall];
+    const strip = { E: [W - 76, W], W: [0, 76], N: [0, 76], S: [D - 76, D] }[wall]; // deep enough for a 74 cm side-by-side fridge
     const perp = (wall === 'N' || wall === 'S') ? (o.wall === 'W' || o.wall === 'E') : (o.wall === 'N' || o.wall === 'S');
     if (!perp || o.c + hw <= strip[0] || o.c - hw >= strip[1]) continue;
     const reach = 90 + 10; // a 90 cm leaf sweeps ~90 cm into the room
@@ -2227,11 +2287,19 @@ function packRun(units, segs) {
 function fitRun(run, d, issues) {
   const L = (run.wall === 'N' || run.wall === 'S') ? d.room.w : d.room.d, wn = WALL_NAME[run.wall].toLowerCase();
   const segs = []; let a = Math.max(0, run.start);
-  for (const [d0, d1] of runKeepOut(run.wall, d)) { if (d1 <= a) continue; if (d0 > a) segs.push([a, Math.min(d0, L)]); a = Math.max(a, d1); }
+  for (const [d0, d1] of runKeepOut(run.wall, d).concat(run.keep || []).sort((x, y) => x[0] - y[0])) { if (d1 <= a) continue; if (d0 > a) segs.push([a, Math.min(d0, L)]); a = Math.max(a, d1); }
   if (a < L) segs.push([a, L]);
   const wins = d.openings.filter(o => o.kind === 'window' && o.wall === run.wall).map(o => { const hw = o.double ? 75 : 50; return [o.c - hw, o.c + hw]; });
+  // a window on a neighbouring wall, close to the shared corner, also rules out a hob (its chimney) or a tall box in that corner
+  { const W = d.room.w, D = d.room.d, L0 = (run.wall === 'N' || run.wall === 'S') ? W : D;
+    for (const o of d.openings.filter(o => o.kind === 'window' && o.wall !== run.wall)) {
+      const perp = (run.wall === 'N' || run.wall === 'S') ? (o.wall === 'W' || o.wall === 'E') : (o.wall === 'N' || o.wall === 'S'); if (!perp) continue;
+      const hw = o.double ? 75 : 50, strip = { E: [W - 62, W], W: [0, 62], N: [0, 62], S: [D - 62, D] }[run.wall];
+      if (o.c + hw <= strip[0] || o.c - hw >= strip[1]) continue;
+      wins.push((o.wall === 'N' || o.wall === 'W') ? [0, 62] : [L0 - 62, L0]);
+    } }
   const units = run.units.map(tok => { const u = kdlUnit(tok); if (!u) issues.push(`Didn't recognise the unit "${tok}".`); else u.tok = tok; return u; }).filter(Boolean)
-    .map(u => u.gap != null ? u : Object.assign(u, { w: Math.round(dimsOf(P(u.pid), Object.assign(defCfg(P(u.pid)), u.cfg)).w * 100) }));
+    .map(u => u.gap != null ? u : Object.assign(u, (dd => ({ w: Math.round(dd.w * 100), dp: Math.round(dd.d * 100) }))(dimsOf(P(u.pid), Object.assign(defCfg(P(u.pid)), u.cfg)))));
   const room = () => segs.reduce((s, [x, y]) => s + (y - x), 0), need = () => units.reduce((s, u) => s + (u.gap != null ? u.gap : u.w), 0);
   const trimOne = () => {
     const g = units.findIndex(u => u.gap != null); if (g >= 0) { units.splice(g, 1); return true; }
@@ -2250,6 +2318,10 @@ function fitRun(run, d, issues) {
   }
   // keep hob / fridge / tall units out from under windows by moving them along the run
   const bad = r => r.miss.length * 10 + r.out.filter(p => NOT_UNDER_WINDOW.includes(p.pid) && wins.some(([w0, w1]) => p.start < w1 - 1 && p.start + p.u.w > w0 + 1)).length;
+  if (wins.length && bad(res) > 0) { // whole arrangements first: window-sensitive units all at the start, or all at the end
+    const nu = units.filter(u => NOT_UNDER_WINDOW.includes(u.pid)), rest = units.filter(u => !NOT_UNDER_WINDOW.includes(u.pid));
+    for (const t of [nu.concat(rest), rest.concat(nu), rest.concat(nu.slice().reverse()), nu.slice().reverse().concat(rest)]) { const r = packRun(t, segs); if (bad(r) < bad(res)) { units.splice(0, units.length, ...t); res = r; } }
+  }
   for (let pass = 0; pass < 3 && wins.length && bad(res) > 0; pass++) {
     let best = null;
     units.forEach((u, i) => { if (!NOT_UNDER_WINDOW.includes(u.pid)) return;
@@ -2266,7 +2338,7 @@ function fitRun(run, d, issues) {
   }
   if (trimmed) issues.push(`Trimmed cabinet widths so the ${wn} run fits.`);
   if (dropped.length) issues.push(`Left out ${dropped.length} unit${dropped.length > 1 ? 's' : ''} (${[...new Set(dropped.map(u => P(u.pid).name.toLowerCase()))].join(', ')}) that didn't fit on the ${wn}.`);
-  const placed = res.out.map(({ pid, cfg, start }) => ({ pid, cfg, start }));
+  const placed = res.out.map(({ pid, cfg, start, u }) => ({ pid, cfg, start, w: u.w, dp: u.dp }));
   placed.miss = res.miss.map(u => u.tok); placed.dropped = dropped.length;
   placed.under = res.out.filter(p => NOT_UNDER_WINDOW.includes(p.pid) && wins.some(([w0, w1]) => p.start < w1 - 1 && p.start + p.u.w > w0 + 1)).map(p => p.u.tok);
   for (const u of res.miss) if (!ESSENTIAL_TOK.test(u.tok)) issues.push(`No room left on the ${wn} for the ${P(u.pid).name.toLowerCase()}.`);
@@ -2280,17 +2352,33 @@ function realizeKDL(d) {
   const items = [];
   // a hob needs a chimney, and a chimney needs a wall: hobs on an island move to the longest RUN (a base cabinet takes their place)
   for (const isl of d.islands) isl.units.forEach((t, i) => { if (/^hob/i.test(t) && d.runs.length) { d.runs.slice().sort((a, b) => b.units.length - a.units.length)[0].units.push(t); isl.units[i] = 'b60.3dr'; issues.push('Moved the hob from the island to a wall so it can have a chimney.'); } });
-  const fits = d.runs.map(run => fitRun(run, d, issues));
+  // corners: a run on a neighbouring wall that already reaches a shared corner reserves it (as deep as its corner unit)
+  const cornerAt = (wall, other) => ({ N: { W: 'start', E: 'end' }, S: { W: 'start', E: 'end' }, W: { N: 'start', S: 'end' }, E: { N: 'start', S: 'end' } })[wall][other];
+  const wallL = w => (w === 'N' || w === 'S') ? d.room.w : d.room.d;
+  const cornerKeep = (run, others) => {
+    const keep = [];
+    for (const [orun, ofit] of others) {
+      if (!ADJ[run.wall].includes(orun.wall) || !ofit) continue;
+      const end = cornerAt(orun.wall, run.wall), oL = wallL(orun.wall);
+      const at = ofit.filter(p => end === 'start' ? p.start < 62 : p.start + p.w > oL - 62); if (!at.length) continue;
+      const deep = Math.max(...at.map(p => p.dp || 60)) + 2, mine = cornerAt(run.wall, orun.wall), L = wallL(run.wall);
+      keep.push(mine === 'start' ? [0, deep] : [L - deep, L]);
+    }
+    return keep;
+  };
+  const fits = [];
+  d.runs.forEach((run, k) => { run.keep = cornerKeep(run, d.runs.slice(0, k).map((r, j) => [r, fits[j]])); fits.push(fitRun(run, d, issues)); });
+  const othersOf = run => d.runs.map((r, j) => [r, fits[j]]).filter(([r]) => r !== run);
   // a sink, hob or fridge that didn't fit goes to the wall where it costs least: another RUN, or an empty wall
   // (a hob, fridge or tall unit stuck under a window is moved the same way, if another wall takes it cleanly)
   for (let r = 0; r < d.runs.length; r++) for (const tok of fits[r].under.filter(t => !fits[r].miss.includes(t))) {
     const used = d.runs.map(x => x.wall), empty = WALLS.filter(w => !used.includes(w)).map(w => ({ wall: w, start: used.some(u => ADJ[w].includes(u)) ? 60 : 0, units: [], fresh: true }));
     for (const cand of d.runs.filter((_, k) => k !== r).concat(empty)) {
-      const trial = Object.assign({}, cand, { units: cand.units.concat(tok) }), out = fitRun(trial, d, []);
+      const trial = Object.assign({}, cand, { units: cand.units.concat(tok) }); trial.keep = cornerKeep(trial, othersOf(cand)); const out = fitRun(trial, d, []);
       if (out.miss.length || out.under.length || out.dropped) continue;
       const rest = Object.assign({}, d.runs[r], { units: d.runs[r].units.filter((t, i, a) => i !== a.indexOf(tok)) }), outR = fitRun(rest, d, []);
       d.runs[r] = rest; fits[r] = outR;
-      if (cand.fresh) { d.runs.push(trial); fits.push(out); } else { const k = d.runs.indexOf(cand); d.runs[k] = trial; fits[k] = out; }
+      if (cand.fresh) { delete trial.fresh; d.runs.push(trial); fits.push(out); } else { const k = d.runs.indexOf(cand); d.runs[k] = trial; fits[k] = out; }
       issues.push(`Moved the ${P(kdlUnit(tok).pid).name.toLowerCase()} to the ${WALL_NAME[cand.wall].toLowerCase()} to keep it clear of the window.`); break;
     }
   }
@@ -2298,12 +2386,12 @@ function realizeKDL(d) {
     const used = d.runs.map(x => x.wall), empty = WALLS.filter(w => !used.includes(w)).map(w => ({ wall: w, start: used.some(u => ADJ[w].includes(u)) ? 60 : 0, units: [], fresh: true }));
     let best = null;
     for (const cand of d.runs.filter((_, k) => k !== r).concat(empty)) {
-      const trial = Object.assign({}, cand, { units: cand.units.concat(tok) }), tmp = [], out = fitRun(trial, d, tmp), cost = (out.miss.length ? 100 : 0) + out.dropped * 3 + (cand.fresh ? 2 : 0);
+      const trial = Object.assign({}, cand, { units: cand.units.concat(tok) }); trial.keep = cornerKeep(trial, othersOf(cand)); const tmp = [], out = fitRun(trial, d, tmp), cost = (out.miss.length ? 100 : 0) + out.under.length * 40 + out.dropped * 3 + (cand.fresh ? 2 : 0);
       if (!best || cost < best.cost) best = { cost, cand, trial, out, tmp };
     }
     if (best && !best.out.miss.length) {
       issues.push(`Moved the ${P(kdlUnit(tok).pid).name.toLowerCase()} to the ${WALL_NAME[best.cand.wall].toLowerCase()} — it didn't fit on the ${WALL_NAME[d.runs[r].wall].toLowerCase()}.`);
-      if (best.cand.fresh) { d.runs.push(best.trial); fits.push(best.out); } else { const k = d.runs.indexOf(best.cand); d.runs[k] = best.trial; fits[k] = best.out; }
+      if (best.cand.fresh) { delete best.trial.fresh; d.runs.push(best.trial); fits.push(best.out); } else { const k = d.runs.indexOf(best.cand); d.runs[k] = best.trial; fits[k] = best.out; }
       issues.push(...best.tmp.filter(m => !issues.includes(m)));
     } else issues.push(`No room anywhere for the ${P(kdlUnit(tok).pid).name.toLowerCase()}.`);
   }
@@ -2332,12 +2420,34 @@ function controlLayer({ adds, chimStyle, fin, issues }) {
   const place = (pid, cfg, sh, why) => { if (!sh || collides(sh, sh._tmp) || featureHit(sh, true)) return false; const it = sh._tmp; applyShape(it, sh); S.items.push(it); void why; return true; };
   const tmpItem = (pid, cfg, v) => ({ uid: uid(), pid, v: v ?? (P(pid).variants[0].fin ? fin : 0), cfg: Object.assign(defCfg(P(pid)), cfg), x: 0, z: 0, rot: 0, wall: null, purpose: '' });
   const at = (it, wall, a0) => { const d = dimsOf(P(it.pid), it.cfg), ax = alongAxis(wall), base = ax === 'x' ? S.room.x0 : S.room.z0; const sh = wallPlace(it, wall, base + a0 + d.w / 2); sh._tmp = it; return sh; };
+  // 0 · safety net: a sink, hob or fridge the runs could not hold is placed wherever the planner's own slot finder allows
+  for (const [pid, ess] of [['sink-unit', 'sink'], ['hob-unit', 'stove'], ['fridge', 'fridge']]) {
+    if (S.items.some(i => (P(i.pid).essential || P(i.pid).role) === ess)) continue;
+    const want = (spec0 => spec0 ? spec0.options : {})(null), it = tmpItem(pid, want), sh = findSlot(it, null);
+    if (sh && !featureHit(sh, true)) { sh._tmp = it; if (place(pid, null, sh)) { issues.push(`Placed the ${P(pid).name.toLowerCase()} where there was room — the design's own spot didn't work.`); continue; } }
+    issues.push(`There is no room for the ${P(pid).name.toLowerCase()} in this room.`);
+  }
   const floor = S.items.filter(i => i.wall && P(i.pid).mount === 'floor');
   // 1 · a chimney over every hob, same width when possible
-  for (const hob of floor.filter(i => P(i.pid).essential === 'stove')) {
+  const chimneyOver = hob => {
     const s = shapeOf(hob), ax = alongAxis(hob.wall), base = ax === 'x' ? S.room.x0 : S.room.z0, [a0, a1] = alongOf(s, ax), w = [90, 75, 60].find(x => x <= Math.round((a1 - a0) * 100) + 1) || 60;
     const it = tmpItem('chimney', { w, style: chimStyle }), off = ((a1 - a0) - w / 100) / 2;
-    if (!place('chimney', null, at(it, hob.wall, a0 - base + off))) issues.push('No room for a chimney above the hob — a window or cabinet is in the way.');
+    return place('chimney', null, at(it, hob.wall, a0 - base + off));
+  };
+  for (const hob of floor.filter(i => P(i.pid).essential === 'stove')) {
+    if (chimneyOver(hob)) continue;
+    // no chimney possible here (a window, usually): the hob trades places with a base cabinet of a hob width elsewhere —
+    // same footprint, so nothing else moves — and the chimney goes over the new spot
+    const cabs = floor.filter(c => (c.pid === 'base-cab' || c.pid === 'dishwasher') && [60, 75, 90].includes(c.cfg.w || 60)).sort((a, b) => Math.hypot(a.x - hob.x, a.z - hob.z) - Math.hypot(b.x - hob.x, b.z - hob.z));
+    let moved = false;
+    for (const cab of cabs) {
+      const keep = [hob.pid, hob.cfg, cab.pid, cab.cfg], hw = hob.cfg.w || 75;
+      hob.pid = 'base-cab'; hob.cfg = Object.assign(defCfg(P('base-cab')), { w: hw, front: '3drawer' });
+      cab.pid = 'hob-unit'; cab.cfg = Object.assign(defCfg(P('hob-unit')), keep[1], { w: keep[3].w || 60 });
+      if (chimneyOver(cab)) { moved = true; issues.push(`Swapped the hob with a base cabinet on the ${WALL_NAME[cab.wall].toLowerCase()} so it can have a chimney.`); break; }
+      [hob.pid, hob.cfg, cab.pid, cab.cfg] = keep;
+    }
+    if (!moved) issues.push('No room for a chimney above the hob — a window or cabinet is in the way.');
   }
   // 2 · wall cabinets above base units (skipped over windows and where they would clash)
   for (const u of floor.filter(i => P(i.pid).counter && P(i.pid).essential !== 'stove')) {
@@ -2406,24 +2516,47 @@ function aiManualText(system, user, title) {
 /* ── generation: instant match from the pre-generated gallery, then parallel Claude designs, cached by brief ── */
 const VARIANTS = ['Follow the brief closely.', 'Try a different layout type from the obvious one.', 'Keep it budget-conscious and compact.'];
 const hashStr = s => { let h = 2166136261; for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619); return (h >>> 0).toString(36); };
-function galleryMatch(b) {
-  const g = window.INTERIO_GALLERY || []; if (!g.length) return null;
+/* the free path: the collection (KDL designs stored in the repo) re-fitted to the brief's room — no AI call at all.
+   ROOM takes the brief's size, openings and islands scale with it, and the control layer re-fits every run to the new walls. */
+function galleryMatches(b) {
+  const g = window.INTERIO_GALLERY || [];
   const wantW = b.widthFt ? parseFloat(b.widthFt) * 30.48 : null, wantD = b.depthFt ? parseFloat(b.depthFt) * 30.48 : null;
   const score = e => (b.layout !== 'any' && e.type !== b.layout ? 400 : 0) + (wantW ? Math.abs(e.w - wantW) : 0) + (wantD ? Math.abs(e.d - wantD) : 0) + (e.must && b.must.filter(m => !e.must.includes(m)).length * 40);
-  return g.slice().sort((x, y) => score(x) - score(y))[0];
+  return g.slice().sort((x, y) => score(x) - score(y));
+}
+const galleryMatch = b => galleryMatches(b)[0] || null;
+function kdlRefit(kdl, b) {
+  const m = kdl.match(/^ROOM\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)/m); if (!m || !b.widthFt || !b.depthFt) return kdl;
+  const W = Math.round(parseFloat(b.widthFt) * 30.48), D = Math.round(parseFloat(b.depthFt) * 30.48), H = Math.round(parseFloat(b.ceilingFt || 9) * 30.48);
+  if (!(W > 150 && D > 150)) return kdl;
+  const sx = W / +m[1], sz = D / +m[2];
+  return kdl.split('\n').map(l => {
+    if (/^ROOM\b/.test(l)) return `ROOM ${W} ${D} ${H}`;
+    let q = l.match(/^(DOOR|WINDOW)\s+([NESW])\s+(\d+(?:\.\d+)?)(.*)$/); if (q) return `${q[1]} ${q[2]} ${Math.round(+q[3] * (/[NS]/.test(q[2]) ? sx : sz))}${q[4]}`;
+    q = l.match(/^ISLAND\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)(.*)$/); if (q) return `ISLAND ${Math.round(+q[1] * sx)} ${Math.round(+q[2] * sz)}${q[3]}`;
+    return l;
+  }).join('\n');
+}
+function composeFromCollection(b, n) {
+  const out = [];
+  for (const e of galleryMatches(b)) { if (out.length >= n) break; try { out.push(kdlToDoc(kdlRefit(e.kdl, b), { brief: b, collection: true })); } catch (err) { /* skip */ } }
+  return out;
 }
 function kdlToDoc(text, extra) {
   const d = parseKDL(text), { spec, real } = realizeKDL(d);
   const doc = docFromDesign(spec, real, extra); doc.ai.kdl = text.trim(); return doc;
 }
 async function generateProposals(b) {
-  if (!aiReady()) return showAISettings(() => { renderBrief(); if (aiReady()) generateProposals(b); });
+  if (!aiReady()) { // free: compose from the collection, fitted to this room
+    const results = composeFromCollection(b, clamp(+b.count || 1, 1, 3)); store.set('gen', { at: Date.now(), results, free: true }); renderResults();
+    if (results.length) $('#ai-results').scrollIntoView({ behavior: 'smooth' }); return;
+  }
   if (AI.busy) return; AI.busy = true;
-  const n = clamp(+b.count || 1, 1, 3), st = $('#ai-brief-status'), pg = aiProgress(`Designing ${n} kitchen${n > 1 ? 's' : ''} with Claude`); st.innerHTML = ''; st.append(pg.el);
+  const n = aiMode() === 'manual' ? 1 : clamp(+b.count || 1, 1, 3), st = $('#ai-brief-status'), pg = aiProgress(`Designing ${n} kitchen${n > 1 ? 's' : ''} with Claude`); st.innerHTML = ''; st.append(pg.el);
   const results = [], cache = store.get('kcache', {}), t0 = Date.now();
   const publish = () => { store.set('gen', { at: Date.now(), results }); renderResults(); };
   const m = galleryMatch(b);
-  if (m) { try { results.push(kdlToDoc(m.kdl, { brief: b, instant: true })); publish(); $('#ai-results').scrollIntoView({ behavior: 'smooth' }); } catch (e) { /* bad gallery entry */ } }
+  if (m) { try { results.push(kdlToDoc(kdlRefit(m.kdl, b), { brief: b, instant: true })); publish(); $('#ai-results').scrollIntoView({ behavior: 'smooth' }); } catch (e) { /* bad gallery entry */ } }
   const jobs = VARIANTS.slice(0, n).map(async (variant, i) => {
     const user = kdlBrief(b, n > 1 ? variant : ''), key = hashStr(AI.cfg.model + '|' + user);
     let text = cache[key], cached = !!text;
@@ -2445,7 +2578,7 @@ function renderResults() {
     const R = doc.room, issues = doc.ai.issues || [];
     grid.append(h('div', { class: 'gcard' },
       h('div', { class: 'thumb', html: planSVG(R, doc.items) }),
-      h('div', { class: 'meta' }, h('small', null, `${doc.ai.layout_type} · ${fmtHub(R)} · ${doc.items.length} units`, doc.instant ? h('span', { class: 'tag' }, 'instant match') : doc.cached ? h('span', { class: 'tag' }, 'cached') : doc.secs != null ? h('span', { class: 'tag ok' }, `${doc.secs} s`) : null),
+      h('div', { class: 'meta' }, h('small', null, `${doc.ai.layout_type} · ${fmtHub(R)} · ${doc.items.length} units`, doc.instant ? h('span', { class: 'tag' }, 'instant match') : doc.collection ? h('span', { class: 'tag' }, 'from the collection') : doc.cached ? h('span', { class: 'tag' }, 'cached') : doc.secs != null ? h('span', { class: 'tag ok' }, `${doc.secs} s`) : null),
         h('strong', null, doc.title), h('p', null, doc.ai.concept),
         h('ul', { class: 'hl' }, (doc.ai.highlights || []).slice(0, 4).map(x => h('li', null, x))),
         h('div', { class: 'gfoot' }, h('span', { class: 'pprice', html: priceHTML(docPrice(doc)) }), issues.length ? h('span', { class: 'adj', title: issues.join('\n') }, `${issues.length} auto-adjustment${issues.length > 1 ? 's' : ''}`) : null),
@@ -2831,13 +2964,15 @@ function init() {
     if (m) { e.preventDefault(); nudge(S.sel, m[0], m[1]); }
   });
   $('#hero-go').onclick = () => $('#ai-brief').scrollIntoView({ behavior: 'smooth' });
-  $('#way-build').onclick = startBuild;
+  $('#way-build').onclick = startBuild; $('#hero-build').onclick = startBuild;
+  document.querySelectorAll('[data-goto]').forEach(b => { b.onclick = () => { const away = S.route !== 'hub'; if (away) location.hash = ''; setTimeout(() => { const t = document.getElementById(b.dataset.goto); if (t && !t.hidden) t.scrollIntoView({ behavior: 'smooth' }); }, away ? 80 : 0); }; });
+  const nmods = document.getElementById('spec-mods'); if (nmods) nmods.textContent = PRODUCTS.length;
   $('#hdr-ai').onclick = () => showAISettings(() => { if (S.route === 'hub') renderBrief(); else renderPanel(true); });
   if (!store.get('cookies', false)) { $('#cookie').hidden = false; $('#cookie-ok').onclick = () => { store.set('cookies', true); $('#cookie').hidden = true; }; $('#cookie-set').onclick = () => { store.set('cookies', true); $('#cookie').hidden = true; toast('Only local storage is used.'); }; }
   window.addEventListener('hashchange', route);
   window.addEventListener('beforeunload', saveNow);
   updateBagCount(); route();
-  window.__interio = { S, CAM, GL, AI, TB, addItem, select, enterEdit, setView, PRODUCTS, P, refreshWarnings, computeWarnings, shapeOf, priceOf, realizeDesign, parseKDL, realizeKDL, kdlSystem, kdlBrief, kdlToDoc, tbParse, tbExec, tbSubmit, tbSystem, tbScene }; // handy for debugging
+  window.__interio = { S, CAM, GL, AI, TB, addItem, select, enterEdit, setView, PRODUCTS, P, refreshWarnings, computeWarnings, shapeOf, priceOf, realizeDesign, parseKDL, realizeKDL, kdlSystem, kdlBrief, kdlToDoc, tbParse, tbExec, tbSubmit, tbSystem, tbScene, overlaps, featureHit, kdlRefit, composeFromCollection, fitRun }; // handy for debugging
 }
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
 })();
