@@ -17,20 +17,69 @@ Open **AI settings** (top right) and pick one of three connections:
    ```
 
    Keep it running and choose *Claude Code bridge* with URL `http://127.0.0.1:8787`. Each request
-   runs `claude -p` headless with the app's system prompt and JSON schema (`--json-schema`), on the
-   model and effort you pick. If you open the planner from a website rather than the local file,
+   runs `claude -p` headless (no tools, no session) with the app's short system prompt, on the model
+   you pick, at low effort; up to 3 run in parallel (`--parallel N`). If you open the planner from a website rather than the local file,
    add its address: `--origin https://<you>.github.io`. If your Claude Code can't run the model you pick
    in the app, choose *Claude Code's default model* there, or start the bridge with a fixed model:
    `--model opus` (alias for the newest Opus your Claude Code knows) or e.g. `--model claude-opus-4-7`. The bridge binds to 127.0.0.1 and is for
    your own use — don't expose it to others. (Windows: run it in WSL.)
 2. **API key** — calls the Claude API directly; the key is stored only in that browser.
    For a public site, deploy `proxy/cloudflare-worker.js` and use its URL in the bridge/proxy field.
-3. **Copy & paste with Claude** — no setup: the planner shows the exact prompt (catalogue + schema +
-   request); send it in claude.ai or Claude Code and paste the JSON reply back.
+3. **Copy & paste with Claude** — no setup: the planner shows the exact prompt; send it in claude.ai
+   or Claude Code and paste the reply (a few KDL lines) back.
 
-Defaults: Claude Opus 5.5, effort `high` (Sonnet 5.5 / Haiku 5.5 and lower effort are faster).
-API requests stream, use structured outputs, cache the catalogue system prompt and enable
-refusal fallbacks.
+Models newer than your Claude Code supports are listed but disabled. API requests stream, cache the
+system prompt and use low effort.
+
+## Speed: why a design takes ~6 s, not 100 s
+
+Claude does not write the scene. It writes **KDL**, a Kitchen Design Language: about 10 lines, ≈ 200 output tokens:
+
+```
+NAME Sage L Kitchen
+TYPE L-shaped
+ROOM 305 274 274
+DOOR S 255
+WINDOW W 130
+STYLE 2 quartz-white gola subway-sage splash f1 curved
+RUN N 0: b60.3dr hob75.5 b60.2d b45.1d fridge.double
+RUN W 60: sink90.drainer dw60 b45.1d
+ADD microwave ro
+```
+
+A deterministic **control layer** turns that into geometry:
+- It fits each run to its wall, avoiding door swings (including doors on the neighbouring wall at a corner).
+- It trims, then drops, plain cabinets. It never drops the sink, hob or fridge; it moves them to the next-best wall instead.
+- It keeps the hob, fridge and tall units out from under windows.
+- It adds the chimney, wall cabinets, lofts, appliances and stools.
+
+Designs run in parallel and are cached by brief. Measured end-to-end through the bridge (Claude Code 2.1.112,
+Opus 4.7): **3 designs in 6.7 s**. See `docs/SPRINT-REVIEW.md`.
+
+**Instant designs:** `designs/gallery.js` holds pre-generated KDL kitchens. They appear on the hub, and the closest
+one is shown immediately while Claude works. To add more, generate KDL with the same prompt (AI tab → *Design
+source (KDL)* shows the format) and append `{ type, w, d, must, kdl }` entries.
+
+## Typing commands (textbot)
+
+The bar at the bottom of the 3D view runs precise commands instantly and offline. Press `/` to focus it and ↑ for
+history. Examples:
+
+- `move the window 50 cm left` · `move window 50cm down the wall` · `lower the window 10 cm`
+- `move wall to the right` · `increase room size by 50cm` · `room 12x10 ft` · `raise the ceiling 20 cm`
+- `add a tall pantry on the east wall` · `make the hob 90 with 5 burners` · `move the fridge left` · `countertop marble`
+- `top view` · `what is the price` · `undo` · `redo`
+
+Anything the grammar doesn't match goes to Claude, if connected, with a tiny prompt. Claude can only answer
+with the planner's own commands or `NONE`. Off-topic input gets *"Doesn't look like anything to me."*
+Design: `docs/TEXTBOT.md`, which also specifies textbots for ONITO, Slack and Jira.
+
+## Touch and trackpad
+
+- Pinch to zoom; two fingers to orbit (twist) and pan.
+- Trackpad: two-finger scroll orbits (pans in top view); pinch zooms.
+- Drag a door or window along its wall, with a live distance label.
+- Drag units to move them; drag a catalogue card (or its **+** on touch) into the room.
 
 ```
 ./
@@ -40,6 +89,9 @@ refusal fallbacks.
 ├── vendor/three.min.js three.js r152 classic build (MIT)
 ├── vendor/anthropic-sdk.min.js  @anthropic-ai/sdk 1.5.0 (MIT), browser bundle
 ├── bridge/claude-code-bridge.mjs  local bridge: the app → Claude Code (your subscription)
+├── designs/gallery.js  pre-generated KDL kitchens (instant designs)
+├── docs/TEXTBOT.md     textbot meta-application design (Interio, ONITO, Slack, Jira)
+├── docs/SPRINT-REVIEW.md  sprint 4 review: speed, controls, textbot
 ├── proxy/cloudflare-worker.js   optional key-holding proxy for public deployments
 ├── PLAN.md             prototype plan: deterministic core → tools → generative UI
 └── arch/               earlier material: findings.md spec of the room designer, screenshots, LICENSE
@@ -50,11 +102,10 @@ refusal fallbacks.
 - **Describe your kitchen** (size, layout preference, cooking style, household, budget in lakh,
   must-haves, look, doors/windows) → Claude generates 1–3 genuinely different designs: the room,
   openings, every unit with its options and finish, countertop, tiles, floor and paint.
-- **Realization**: the planner places the design with its own collision and door/window rules,
-  nudges small overlaps and reports anything it couldn't place.
-- **AI tab** in the planner: the design's concept, highlights and notes; ask for changes in plain
-  words (or one-tap: fix warnings, cheaper, more storage, different layout, lighter finishes) —
-  Claude sees the current design including your manual edits; every AI change can be undone.
+- **Realization**: the control layer places the design with its own collision and door/window rules
+  and lists every adjustment it made.
+- **AI tab** in the planner: the design's concept, highlights, adjustments and KDL source; "Design
+  this room again"; and the textbot for changes — every change can be undone.
 - Or start from an empty room and draw it yourself.
 - **Configure every unit**: width, fronts (doors, drawers, glass, lift-up, open, blind corner),
   sink bowl and material, hob burners and built-in oven, chimney size and style, fridge type,

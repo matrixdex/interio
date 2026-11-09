@@ -44,6 +44,14 @@ deterministic step that places it (walls, snapping, 3D collisions, door/window c
 small overlaps and reports what it changed. Proposals render as cards; the planner's AI tab
 sends the current design (with manual edits) plus failing checks for revisions, with undo.
 
+## Phase 0.6 — Fast generation, touch, textbot ✅
+
+JSON designs (≈ 100 s) replaced by KDL (≈ 10 lines) and a deterministic control layer (≈ 5–10 s per design,
+in parallel), plus a pre-generated gallery for instant results. Touch and trackpad gestures, door and window
+dragging, and catalogue drag and drop. A textbot: grammar → Claude translator → executor with undo; it refuses
+anything outside its manifest. See `docs/SPRINT-REVIEW.md` and `docs/TEXTBOT.md`. The textbot's canonical
+commands are the Phase 1 tool layer in text form.
+
 ## Phase 1 — Tool layer (model ↔ scene)
 
 Expose the deterministic operations as JSON tools. Each tool validates through the same

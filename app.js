@@ -1025,90 +1025,182 @@ function setNDC(e) {
   GL.ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
   GL.ray.setFromCamera(GL.ndc, GL.cam);
 }
-function pickFeature(e) {
-  setNDC(e);
-  const objs = GL.refs.feats, hits = GL.ray.intersectObjects(objs, true);
-  for (const h of hits) { let o = h.object; while (o && !(o.userData && o.userData.feature)) o = o.parent; if (o) return o.userData.feature; }
-  return null;
-}
 const PLANE = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 function groundPoint(e) { setNDC(e); const v = new THREE.Vector3(); return GL.ray.ray.intersectPlane(PLANE, v) ? v : null; }
 
 const DRAG = { mode: null, id: null, sx: 0, sy: 0, moved: false, item: null, offx: 0, offz: 0, az: 0, el: 0, px: 0, pz: 0, yaw: 0, pitch: 0, handle: null };
+
+/* ═══════════════ 6d · control layer: touch + trackpad first ═══════════════
+   One finger / one pointer: drag a unit, drag a door or window along its wall, or orbit (dollhouse) / pan (top).
+   Two fingers: pinch = zoom, move = pan, twist = orbit. Trackpad: pinch = zoom, two-finger scroll = orbit / pan.
+   Mouse wheel = zoom. Catalogue cards can be dragged onto the room. */
+const PTR = new Map(); // active pointers on the canvas
+let GESTURE = null;
 function bindCanvas() {
   const cv = $('#gl');
   cv.addEventListener('pointerdown', e => {
     if (e.button !== 0 && e.button !== 1 && e.button !== 2) return;
-    cv.setPointerCapture(e.pointerId); cv.focus({ preventScroll: true }); closePopovers();
-    Object.assign(DRAG, { id: e.pointerId, sx: e.clientX, sy: e.clientY, moved: false, item: null });
+    try { cv.setPointerCapture(e.pointerId); } catch (err) { /* synthetic or already-released pointer */ } cv.focus({ preventScroll: true }); closePopovers();
+    PTR.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (PTR.size === 2) { startGesture(); return; }
+    if (PTR.size > 2) return;
+    Object.assign(DRAG, { id: e.pointerId, sx: e.clientX, sy: e.clientY, moved: false, item: null, feat: null, featDesign: false });
+    const camDrag = () => { DRAG.mode = 'cam'; DRAG.az = CAM.az; DRAG.el = CAM.el; DRAG.px = CAM.px; DRAG.pz = CAM.pz; DRAG.yaw = CAM.yaw; DRAG.pitch = CAM.pitch; };
     if (S.mode === 'edit') {
-      if (S.edit.step === 2) {
-        const f = pickFeature(e);
-        if (f) { selectFeature(f); const g = groundPoint(e); editPush(); DRAG.mode = 'feat'; DRAG.feat = f; DRAG.g0 = g; DRAG.u0 = f.u; return; }
-      }
-      DRAG.mode = 'cam'; DRAG.az = CAM.az; DRAG.el = CAM.el; DRAG.px = CAM.px; DRAG.pz = CAM.pz; DRAG.yaw = CAM.yaw; DRAG.pitch = CAM.pitch; return;
+      if (S.edit.step === 2) { const f = pickFeature(e); if (f) { selectFeature(f); editPush(); startFeatDrag(e, f); return; } }
+      return camDrag();
     }
     const it = e.button === 0 ? pickItem(e) : null;
     if (it) {
       select(it); const s0 = shapeOf(it), g = new THREE.Vector3();
       DRAG.plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -s0.y0); setNDC(e); const okp = GL.ray.ray.intersectPlane(DRAG.plane, g);
-      DRAG.mode = 'item'; DRAG.item = it; DRAG.offx = okp ? it.x - g.x : 0; DRAG.offz = okp ? it.z - g.z : 0; DRAG.rot0 = it.rot;
+      DRAG.mode = 'item'; DRAG.item = it; DRAG.offx = okp ? it.x - g.x : 0; DRAG.offz = okp ? it.z - g.z : 0; DRAG.rot0 = it.rot; DRAG.start = { x: it.x, z: it.z, rot: it.rot, wall: it.wall };
       DRAG.riders = P(it.pid).counter ? S.items.filter(o => o !== it && P(o.pid).mount === 'counter' && Math.abs(o.x - it.x) <= s0.hw && Math.abs(o.z - it.z) <= s0.hd) : null;
       (DRAG.riders || []).forEach(r => { r._ox = r.x - it.x; r._oz = r.z - it.z; r._rot0 = r.rot; });
       cv.style.cursor = 'grabbing'; return;
     }
-    DRAG.mode = 'cam'; DRAG.az = CAM.az; DRAG.el = CAM.el; DRAG.px = CAM.px; DRAG.pz = CAM.pz; DRAG.yaw = CAM.yaw; DRAG.pitch = CAM.pitch;
+    const f = e.button === 0 && S.view !== 'inside' ? pickFeature(e) : null;
+    if (f) { TB.undo.push(JSON.stringify(currentDoc())); TB.redo = []; DRAG.featDesign = true; startFeatDrag(e, f); return; }
+    camDrag();
   });
   cv.addEventListener('pointermove', e => {
+    if (PTR.has(e.pointerId)) PTR.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (GESTURE) { moveGesture(); return; }
     if (DRAG.mode == null || e.pointerId !== DRAG.id) { hoverCursor(e); return; }
     const dx = e.clientX - DRAG.sx, dy = e.clientY - DRAG.sy;
-    if (!DRAG.moved && Math.hypot(dx, dy) < 4) return; DRAG.moved = true;
+    if (!DRAG.moved && Math.hypot(dx, dy) < (e.pointerType === 'touch' ? 8 : 4)) return; DRAG.moved = true;
     if (DRAG.mode === 'item') dragItem(e);
     else if (DRAG.mode === 'feat') dragFeature(e);
     else if (DRAG.mode === 'cam') {
       if (S.view === 'dollhouse') { CAM.az = DRAG.az - dx * .4; CAM.el = clamp(DRAG.el + dy * .3, 8, 86); }
-      else if (S.view === 'top') { const hh = topViewHeight(), k = hh / GL.vh; CAM.px = DRAG.px - dx * k; CAM.pz = DRAG.pz - dy * k; }
+      else if (S.view === 'top') { const k = topViewHeight() / GL.vh; CAM.px = DRAG.px - dx * k; CAM.pz = DRAG.pz - dy * k; }
       else { CAM.yaw = clamp(DRAG.yaw - dx * .18, -80, 80); CAM.pitch = clamp(DRAG.pitch - dy * .12, -30, 30); }
       updateCamera(); markDirty(); positionOverlay();
     }
   });
   const end = e => {
+    PTR.delete(e.pointerId);
+    if (GESTURE) { if (PTR.size < 2) { GESTURE = null; DRAG.mode = null; DRAG.id = null; } return; }
     if (e.pointerId !== DRAG.id) return;
     const was = DRAG.mode, moved = DRAG.moved; cv.style.cursor = '';
     if (was === 'item' && moved) afterChange({ keepPanel: true });
-    if (was === 'feat' && !moved) S.edit.undo.pop();
-    if (was === 'feat' && moved) editCommit();
+    if (was === 'feat') {
+      if (DRAG.featDesign) { if (moved) { refreshWarnings(); afterChange({ keepPanel: true, quiet: true }); } else TB.undo.pop(); }
+      else { if (!moved) S.edit.undo.pop(); else editCommit(); }
+      DRAG.feat = null; positionOverlay();
+    }
     if (was === 'cam' && !moved) { if (S.mode === 'design') deselect(); else if (S.mode === 'edit' && S.edit.step === 2) selectFeature(null); }
-    if (was === 'item' && !moved) { renderItemFloat(); }
+    if (was === 'item' && !moved) renderItemFloat();
     DRAG.mode = null; DRAG.id = null;
   };
   cv.addEventListener('pointerup', end); cv.addEventListener('pointercancel', end);
   cv.addEventListener('contextmenu', e => e.preventDefault());
   cv.addEventListener('wheel', e => {
     e.preventDefault();
-    // Trackpad pinch = many small wheel events with ctrlKey set; a mouse wheel notch = one big event.
-    // Zoom by the actual delta, damped, and cap what a single event can do so fast pinches stay controllable.
     const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1;
-    const pinch = e.ctrlKey, cap = pinch ? ZOOM_SENS.pinchCap : ZOOM_SENS.wheelCap;
-    const dy = clamp(e.deltaY * unit, -cap, cap);
-    zoomScale(Math.exp(dy * (pinch ? ZOOM_SENS.pinch : ZOOM_SENS.wheel)));
+    if (e.ctrlKey) { // trackpad pinch (and ctrl+wheel)
+      const dy = clamp(e.deltaY * unit, -ZOOM_SENS.pinchCap, ZOOM_SENS.pinchCap); zoomScale(Math.exp(dy * ZOOM_SENS.pinch)); return;
+    }
+    const trackpad = e.deltaMode === 0 && (e.deltaX !== 0 || !Number.isInteger(e.deltaY) || Math.abs(e.deltaY) < 40);
+    if (trackpad) { // two-finger scroll: orbit in 3D, pan in plan, look around inside
+      const dx = clamp(e.deltaX, -60, 60), dy = clamp(e.deltaY, -60, 60);
+      if (S.view === 'dollhouse') { CAM.az += dx * .22; CAM.el = clamp(CAM.el + dy * .15, 8, 86); }
+      else if (S.view === 'top') { const k = topViewHeight() / GL.vh; CAM.px += dx * k; CAM.pz += dy * k; }
+      else { CAM.yaw = clamp(CAM.yaw - dx * .12, -80, 80); CAM.pitch = clamp(CAM.pitch - dy * .08, -30, 30); }
+      updateCamera(); markDirty(); positionOverlay(); return;
+    }
+    const dy = clamp(e.deltaY * unit, -ZOOM_SENS.wheelCap, ZOOM_SENS.wheelCap); zoomScale(Math.exp(dy * ZOOM_SENS.wheel));
   }, { passive: false });
-  // Safari reports trackpad pinch as gesture events instead of wheel events
-  let gScale = 1;
+  let gScale = 1; // Safari trackpad pinch
   cv.addEventListener('gesturestart', e => { e.preventDefault(); gScale = e.scale || 1; });
   cv.addEventListener('gesturechange', e => { e.preventDefault(); const r = (e.scale || 1) / gScale; gScale = e.scale || 1; zoomScale(Math.pow(1 / r, ZOOM_SENS.gesture)); });
   cv.addEventListener('gestureend', e => e.preventDefault());
 }
+/* two-finger gestures */
+function gestureState() { const [a, b] = [...PTR.values()]; return { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2, ang: Math.atan2(b.y - a.y, b.x - a.x) }; }
+function startGesture() {
+  if (DRAG.mode === 'item' && DRAG.item && DRAG.start) { const it = DRAG.item; Object.assign(it, DRAG.start); syncNode(it); (DRAG.riders || []).forEach(r => { r.x = it.x + r._ox; r.z = it.z + r._oz; r.rot = r._rot0; syncNode(r); }); }
+  if (DRAG.mode === 'feat' && DRAG.feat) { DRAG.feat.u = DRAG.u0; buildRoom(); DRAG.feat = null; }
+  DRAG.mode = 'gesture'; GESTURE = gestureState();
+}
+function moveGesture() {
+  const g = gestureState(), p = GESTURE;
+  zoomScale(clamp(p.d / g.d, .8, 1.25));
+  const dx = g.mx - p.mx, dy = g.my - p.my;
+  if (S.view === 'top') { const k = topViewHeight() / GL.vh; CAM.px -= dx * k; CAM.pz -= dy * k; }
+  else if (S.view === 'dollhouse') {
+    const k = CAM.dist / GL.vh * .9, az = rad(CAM.az);
+    CAM.px -= (dx * Math.cos(az) + dy * Math.sin(az) * .6) * k; CAM.pz -= (-dx * Math.sin(az) + dy * Math.cos(az) * .6) * k;
+    let da = g.ang - p.ang; if (da > Math.PI) da -= 2 * Math.PI; if (da < -Math.PI) da += 2 * Math.PI; CAM.az -= deg(da);
+  } else { CAM.yaw = clamp(CAM.yaw - dx * .18, -80, 80); CAM.pitch = clamp(CAM.pitch - dy * .12, -30, 30); }
+  GESTURE = g; updateCamera(); markDirty(); positionOverlay();
+}
 function hoverCursor(e) {
-  if (S.mode !== 'design' || DRAG.mode) return;
-  $('#gl').style.cursor = pickItem(e) ? 'grab' : '';
+  if (S.mode !== 'design' || DRAG.mode || e.pointerType !== 'mouse') return;
+  $('#gl').style.cursor = pickItem(e) ? 'grab' : (S.view !== 'inside' && pickFeature(e) ? 'ew-resize' : '');
+}
+/* doors & windows slide along their wall — in the planner and in Edit room */
+function pickFeature(e) {
+  setNDC(e);
+  const hits = GL.ray.intersectObjects(GL.refs.feats, true);
+  for (const h of hits) { let o = h.object, vis = true; while (o) { if (o.visible === false) vis = false; if (o.userData && o.userData.feature) break; o = o.parent; } if (o && vis) return o.userData.feature; }
+  return null;
+}
+function startFeatDrag(e, f) {
+  const R = S.room, L = wallLen(f.wall), others = R.feats.filter(g => g !== f && g.wall === f.wall);
+  DRAG.mode = 'feat'; DRAG.feat = f; DRAG.g0 = groundPoint(e); DRAG.u0 = f.u;
+  DRAG.lo = Math.max(f.w / 2 + .05, ...others.filter(g => g.u < f.u).map(g => g.u + g.w / 2 + f.w / 2 + .02));
+  DRAG.hi = Math.min(L - f.w / 2 - .05, ...others.filter(g => g.u > f.u).map(g => g.u - g.w / 2 - f.w / 2 - .02));
+  $('#gl').style.cursor = 'ew-resize';
 }
 function dragFeature(e) {
-  const f = DRAG.feat, R = S.room, L = wallLen(f.wall), g = groundPoint(e); if (!g) return;
-  const base = (f.wall === 'N' || f.wall === 'S') ? R.x0 : R.z0, along = (f.wall === 'N' || f.wall === 'S') ? g.x : g.z;
-  const d0 = (f.wall === 'N' || f.wall === 'S') ? DRAG.g0.x : DRAG.g0.z;
-  f.u = clamp(DRAG.u0 + (along - d0), f.w / 2 + .1, L - f.w / 2 - .1); void base;
-  buildRoom(); markDirty(); positionOverlay();
+  const f = DRAG.feat, g = groundPoint(e); if (!g || !DRAG.g0) return;
+  const ax = alongAxis(f.wall), d = ax === 'x' ? g.x - DRAG.g0.x : g.z - DRAG.g0.z;
+  const u = clamp(Math.round((DRAG.u0 + d) * 100) / 100, DRAG.lo, DRAG.hi); if (u === f.u) return;
+  f.u = u; buildRoom(); markDirty(); positionOverlay();
+}
+/* one placement rule for dragging a unit and for dropping a new one: snap to the nearest wall when close, else free */
+function placeShape(it, tx, tz, skip) {
+  const p = P(it.pid), R = S.room; let sh = null;
+  if (p.mount === 'wall' || p.snap) {
+    const dist = { N: tz - R.z0, S: R.z1 - tz, W: tx - R.x0, E: R.x1 - tx }, w = WALLS.reduce((a, b) => dist[a] <= dist[b] ? a : b), d = dimsOf(p, it.cfg);
+    if (p.mount === 'wall' || dist[w] < d.d / 2 + .3) {
+      sh = snapAlong(wallPlace(it, w, alongAxis(w) === 'x' ? tx : tz), it, alongAxis(w));
+      if (collides(sh, it, skip) || (p.mount === 'wall' && featureHit(sh, true))) sh = null;
+      if (!sh && p.mount === 'wall') return null;
+    }
+  }
+  if (!sh) for (const [x, z] of [[tx, tz], [tx, it.z], [it.x, tz]]) { const q = clampXZ(it, x, z), s = shapeOf(it, q.x, q.z); if (!collides(s, it, skip)) { sh = s; break; } }
+  return sh;
+}
+function dragItem(e) {
+  const it = DRAG.item; setNDC(e);
+  const hit = new THREE.Vector3(); if (!GL.ray.ray.intersectPlane(DRAG.plane, hit)) return;
+  const sh = placeShape(it, hit.x + DRAG.offx, hit.z + DRAG.offz, DRAG.riders); if (!sh) return;
+  applyShape(it, sh); syncNode(it);
+  if (DRAG.riders) { const a = rad(it.rot - DRAG.rot0), c = Math.cos(a), s = Math.sin(a); for (const r of DRAG.riders) { r.x = it.x + r._ox * c + r._oz * s; r.z = it.z - r._ox * s + r._oz * c; r.rot = r._rot0 + (it.rot - DRAG.rot0); r.wall = wallOf(shapeOf(r)); syncNode(r); } }
+  positionOverlay(); refreshWarnings();
+}
+/* drag a catalogue card onto the room (mouse, pen and touch — touch drags start on the + button) */
+function startCardDrag(e, p) {
+  if (e.button !== 0 || S.mode !== 'design') return;
+  const sx = e.clientX, sy = e.clientY; let ghost = null;
+  const overCanvas = ev => { const r = $('#gl').getBoundingClientRect(), el = document.elementFromPoint(ev.clientX, ev.clientY); return ev.clientX >= r.left && ev.clientX <= r.right && ev.clientY >= r.top && ev.clientY <= r.bottom && el && (el.id === 'gl' || el.closest('#view') && !el.closest('#textbot, #zoom, #itemfloat, #warn')); };
+  const move = ev => {
+    if (!ghost) { if (Math.hypot(ev.clientX - sx, ev.clientY - sy) < 6) return; ghost = h('div', { class: 'drag-ghost', 'aria-hidden': 'true' }, thumbImg(p.id, p.variants[0].fin ? S.room.fin || 0 : 0, '', defCfg(p)), h('span', null, p.name)); document.body.append(ghost); document.body.classList.add('dragging'); }
+    ev.preventDefault(); ghost.style.left = ev.clientX + 'px'; ghost.style.top = ev.clientY + 'px'; ghost.classList.toggle('ok', !!overCanvas(ev));
+  };
+  const cleanup = () => { if (ghost) ghost.remove(); document.body.classList.remove('dragging'); window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', cleanup); };
+  const up = ev => { const dropped = ghost && overCanvas(ev); cleanup(); if (dropped) { dropProduct(p, ev); e.target.dataset.dragged = '1'; setTimeout(() => delete e.target.dataset.dragged, 50); } };
+  window.addEventListener('pointermove', move, { passive: false }); window.addEventListener('pointerup', up); window.addEventListener('pointercancel', cleanup);
+}
+function dropProduct(p, ev) {
+  const g = groundPoint(ev); if (!g) return;
+  const it = { uid: uid(), pid: p.id, v: p.variants[0].fin ? S.room.fin || 0 : 0, cfg: defCfg(p), x: g.x, z: g.z, rot: 0, wall: null };
+  const sh = placeShape(it, g.x, g.z) || findSlot(it, { x: g.x, z: g.z });
+  if (!sh) return toast(`No room for the ${p.name.toLowerCase()} there.`);
+  applyShape(it, sh); S.items.push(it); attachItem(it); select(it); afterChange({ keepPanel: false });
+  toast(`Added the ${p.name.toLowerCase()} where you dropped it.`);
 }
 
 /* ═══════════════ 7 · render pipeline & overlays ═══════════════ */
@@ -1191,6 +1283,11 @@ function drawDims() {
     if (S.measure.space && S.mode === 'design') {
       const list = S.sel ? [S.sel] : S.items.filter(i => P(i.pid).mount === 'floor');
       for (const it of list) for (const g of gapsFor(it)) { const a = proj(g.ax, .02, g.az), b = proj(g.bx, .02, g.bz); line(a, b, 'gap'); add((a.x + b.x) / 2, (a.y + b.y) / 2, fmtLen(g.len), 'gap'); }
+    }
+    if (DRAG.mode === 'feat' && DRAG.feat) {
+      const f = DRAG.feat, fg = GL.refs.feats.find(g => g.userData.feature === f);
+      if (fg) { fg.updateWorldMatrix(true, false); const v = new THREE.Vector3(0, (f.sill || 0) + f.h + .12, .06).applyMatrix4(fg.matrixWorld), q = proj(v.x, v.y, v.z), L = wallLen(f.wall), from = { N: 'west', S: 'west', W: 'north', E: 'north' }[f.wall];
+        add(clamp(q.x, 175, Math.max(175, GL.vw - 175)), clamp(q.y, 20, GL.vh - 20), `${f.kind} · ${Math.round((f.u - f.w / 2) * 100)} cm from the ${from} corner · ${Math.round((L - f.u - f.w / 2) * 100)} cm to the other`, 'prod'); }
     }
     if (S.mode === 'edit' && S.edit.feat) {
       const f = S.edit.feat, fg = GL.refs.feats.find(g => g.userData.feature === f);
@@ -1458,27 +1555,6 @@ function showHub() {
 /* ═══════════════ 11 · hub ═══════════════ */
 
 /* ═══════════════ 11b · kitchen planner: drag, tiles, panels, bag, lifecycle, hub ═══════════════ */
-function dragItem(e) {
-  const it = DRAG.item, p = P(it.pid), R = S.room; setNDC(e);
-  const hit = new THREE.Vector3(); if (!GL.ray.ray.intersectPlane(DRAG.plane, hit)) return;
-  const tx = hit.x + DRAG.offx, tz = hit.z + DRAG.offz; let sh = null;
-  if (p.mount === 'wall' || p.snap) {
-    const dist = { N: tz - R.z0, S: R.z1 - tz, W: tx - R.x0, E: R.x1 - tx }, w = WALLS.reduce((a, b) => dist[a] <= dist[b] ? a : b), d = dimsOf(p, it.cfg);
-    if (p.mount === 'wall' || dist[w] < d.d / 2 + .3) {
-      sh = snapAlong(wallPlace(it, w, alongAxis(w) === 'x' ? tx : tz), it, alongAxis(w));
-      if (collides(sh, it, DRAG.riders)) sh = null;
-      if (!sh && p.mount === 'wall') return;
-    }
-  }
-  if (!sh) for (const [x, z] of [[tx, tz], [tx, it.z], [it.x, tz]]) { const q = clampXZ(it, x, z), s = shapeOf(it, q.x, q.z); if (!collides(s, it, DRAG.riders)) { sh = s; break; } }
-  if (!sh) return;
-  applyShape(it, sh); syncNode(it);
-  if (DRAG.riders) {
-    const a = rad(it.rot - DRAG.rot0), c = Math.cos(a), s = Math.sin(a);
-    for (const r of DRAG.riders) { r.x = it.x + r._ox * c + r._oz * s; r.z = it.z - r._ox * s + r._oz * c; r.rot = r._rot0 + (it.rot - DRAG.rot0); r.wall = wallOf(shapeOf(r)); syncNode(r); }
-  }
-  positionOverlay(); refreshWarnings();
-}
 function updateWallVisibility() {
   const refs = GL.refs; if (!refs) return;
   const c = roomCenter(), p = GL.cam.position;
@@ -1595,7 +1671,8 @@ function pcard(p, o = {}) {
   const vi = o.vi ?? (p.variants[0].fin ? (S.room && S.room.fin) || 0 : 0), v = p.variants[vi] || p.variants[0], c = defCfg(p);
   const card = h('div', { class: 'pcard' });
   const img = h('div', { class: 'pimg' }, thumbImg(p.id, vi, '', c));
-  const act = h('button', { class: 'padd', 'aria-label': o.swap ? `Swap with ${p.name}` : `Add ${p.name} to kitchen`, title: o.swap ? 'Swap' : 'Add to kitchen', html: ico(o.swap ? 'swap' : 'plus', 22), onclick: e => { e.stopPropagation(); o.onAdd ? o.onAdd(p) : addItem(p.id); } });
+  const act = h('button', { class: 'padd', 'aria-label': o.swap ? `Swap with ${p.name}` : `Add ${p.name} to kitchen — or drag it into the room`, title: o.swap ? 'Swap' : 'Add to kitchen (or drag into the room)', html: ico(o.swap ? 'swap' : 'plus', 22), onclick: e => { e.stopPropagation(); if (e.currentTarget.dataset.dragged) return; o.onAdd ? o.onAdd(p) : addItem(p.id); } });
+  if (!o.swap) { act.addEventListener('pointerdown', e => { e.stopPropagation(); startCardDrag(e, p); }); img.addEventListener('pointerdown', e => { if (e.pointerType !== 'touch' && e.target.closest('.pheart, .padd') == null) startCardDrag(e, p); }); }
   const hb = h('button', { class: 'pheart' + (S.favs.has(p.id) ? ' on' : ''), 'aria-label': 'Save for later', html: ico('heart', 20), onclick: e => { e.stopPropagation(); toggleFav(p.id); hb.classList.toggle('on', S.favs.has(p.id)); } });
   img.append(hb, act); img.addEventListener('dblclick', () => (o.onAdd ? o.onAdd(p) : addItem(p.id)));
   card.append(img, h('div', { class: 'pname' }, p.name, p.essential ? h('span', { class: 'tag' }, 'Essential') : null), h('div', { class: 'pdesc' }, p.desc(c, v)),
@@ -1806,7 +1883,7 @@ function roomCard(name, R, tid, opts = {}) {
 }
 function renderHub() {
   const gm = $('#mydesigns-grid'); gm.innerHTML = '';
-  renderBrief(); renderResults();
+  renderBrief(); renderResults(); renderGallery();
   const all = Object.values(docs()).filter(d => d && d.room && d.kitchen).sort((a, b) => b.updated - a.updated);
   $('#mydesigns').hidden = !all.length;
   all.forEach(d => {
@@ -1873,148 +1950,13 @@ function aiErrorText(e) {
 }
 
 /* ── what Claude knows: the deterministic catalogue + conventions (stable → prompt-cached) ── */
-function catalogForAI() {
-  const R = { h: 2.75 };
-  const products = PRODUCTS.map(p => {
-    const c = defCfg(p), d = dimsOf(p, c, R), out = {
-      id: p.id, name: p.name, what: p.type, category: p.cat, mount: p.mount, provides_worktop: !!p.counter, essential: p.essential || null,
-      default_size_cm: { width: Math.round(d.w * 100), depth: Math.round(d.d * 100), height: p.toCeiling ? 'up to the ceiling' : Math.round(d.h * 100) },
-      options: Object.fromEntries(p.opts.map(o => [o.key, o.values.map(([v, l]) => `${v} = ${l}`)])),
-      finishes: p.variants.map((v, i) => `${i} = ${v.n}`),
-      price_inr_at_defaults: p.price(c, p.variants[0])
-    };
-    if (p.mount === 'wall') out.mounted_bottom_at_cm = typeof p.y0 === 'function' ? 'max(215, ceiling − 60)' : Math.round(d.y0 * 100);
-    if (p.dims && p.opts.length) { const o = p.opts[0]; out.size_by_option = Object.fromEntries(o.values.map(([v]) => { const dd = p.dims(Object.assign({}, c, { [o.key]: v })); return [`${o.key}=${v}`, `${dd.w}×${dd.d}×${dd.h} cm`]; })); }
-    const wo = p.opts.find(o => o.key === 'w'); if (wo) out.price_inr_by_width = Object.fromEntries(wo.values.map(([w]) => [w, p.price(Object.assign({}, c, { w }), p.variants[0])]));
-    return out;
-  });
-  return {
-    products,
-    cabinet_finishes: FINISHES.map((f, i) => `${i} = ${f.n}${f.mult !== 1 ? ` (price ×${f.mult})` : ''}`),
-    countertops: COUNTERS.map(c => `${c.id} = ${c.n}`), handles: HANDLES.map(([id, n]) => `${id} = ${n}`),
-    wall_tiles: TILES.map(t => `${t.id} = ${t.n}`), tile_coverage: TILE_COVER.map(([id, n]) => `${id} = ${n}`),
-    floors: FLOORS.map(f => `${f.id} = ${f.name}`), wall_paints: WALL_COLORS,
-    doors: DOORS.map(d => `${d.id} = ${d.name}, ${Math.round(d.w * 100)} cm wide, ${Math.round(d.h * 100)} cm high`),
-    windows: WINDOWS.map(w => `${w.id} = ${w.name}, ${Math.round(w.w * 100)} cm wide, sill at ${Math.round(w.sill * 100)} cm, ${Math.round(w.h * 100)} cm high`)
-  };
-}
-function aiSystem() {
-  if (AI.sys) return AI.sys;
-  AI.sys = `You are the kitchen designer inside Interio, a 3D modular-kitchen planner for Indian homes. You design the room and the complete kitchen; the app renders your design in 3D, prices it from the catalogue and checks it.
-
-You can only use products, options, finishes and style ids from the catalogue below. Sizes and prices come from the catalogue; never invent products.
-
-## Coordinates
-- The room is a rectangle seen from above. Origin = the north-west inside corner. x grows east (room width), z grows south (room depth). All values in centimetres.
-- Walls: N (z = 0), S (z = depth), W (x = 0), E (x = width). Each wall is measured from its start: N and S walls start at the west end; W and E walls start at the north end.
-- Openings (doors/windows) sit on a wall at center_cm measured from that wall's start. Windows have a sill at 105 cm and are 100 cm high.
-
-## Placing units
-- placement.mode "wall": the unit's back goes flat against \`wall\`, facing into the room. start_cm = distance from the wall's start to the unit's near edge. Width along the wall is the unit's width. Use this for every base cabinet, sink unit, hob unit, dishwasher, tall unit, fridge, wall cabinet, chimney, loft, shelf and water purifier. Heights are automatic (base units 90 cm with worktop, wall cabinets from 145 cm, chimney hood from 155 cm, loft at the top of the wall).
-- A run along a wall is consecutive units: next start_cm = previous start_cm + previous width. Floor units and wall units are separate layers, so a wall cabinet can share the same start_cm range as the base units below it.
-- Corners: base units are 60 cm deep. When two runs meet, the second run must start at 60 cm on its wall (the corner square belongs to the first run; a base-cab with front "blind" makes a good corner unit). Wall units are 35 cm deep, so a second wall-unit run can start at 35 cm.
-- placement.mode "counter": counter-top items (microwave, otg, mixer, gas-stove) sit on a unit that provides a worktop. Give the wall and start_cm of the item's near edge; the unit underneath must already be in your design.
-- placement.mode "free": islands, peninsulas and stools. x_cm, z_cm = the unit's centre; rotation_deg = which way its front faces: 0 south, 90 east, 180 north, -90 west.
-- Leave fields that don't apply as null. Set only the options that belong to that product (others null). finish is an index into the product's finishes (for cabinets, into cabinet_finishes).
-- List floor units first, then wall units, then counter-top items.
-
-## Rules the planner checks (design to pass them)
-- Every Indian kitchen has a sink, a stove (hob-unit, or gas-stove on a worktop) and a chimney. The chimney sits on the same wall directly above the stove, at least as wide as the hob.
-- Units must fit inside the walls: on each wall, the furthest unit edge must not pass the wall length. No two units may overlap.
-- Doors: nothing in front of a door within its width, and nothing across it. Windows: base units may go under a window; wall cabinets, chimneys, lofts, tall units and fridges must not cover a window's span. Put the sink under a window when there is one.
-- Leave at least 30 cm (ideally 45–60 cm) of worktop between the sink and the hob, and worktop next to the hob.
-- Work triangle sink → stove → fridge: 3.6–7.9 m total. Aisles between facing runs or an island: 100–120 cm.
-
-## Indian kitchen practice
-- Heavy cooking (daily tadka, deep-frying): 4–5 burner hob, chimney 75–90 cm (curved glass or filterless for heavy oil), drawer units next to the hob for masala and utensils, easy-clean finishes and tiles (dado or full tiling).
-- RO water purifier on the wall near the sink. Overhead loft for bulk storage is common. A tall pantry suits families buying in bulk. Fridge near the entrance. Many homes prefer a 3-drawer unit beside the hob.
-- Budgets are usually given in lakh (1 lakh = ₹1,00,000). Estimate cost from price_inr fields; stay within the budget and say if it's tight.
-- When the user gives sizes in feet, convert (1 ft = 30.48 cm). If no size is given, pick a realistic urban Indian kitchen (e.g. 240×300 cm to 360×420 cm) and include a door and usually a window.
-
-## Writing
-- name: short and evocative. concept: one or two sentences. highlights: 3–5 short phrases a homeowner cares about. notes: trade-offs, assumptions (e.g. assumed room size) and anything to verify on site. purpose on each item: a few words.
-- When asked for several designs, make them genuinely different (layout type, palette, priorities), not variations of one plan.
-
-## Catalogue (JSON)
-${JSON.stringify(catalogForAI())}`;
-  return AI.sys;
-}
-function aiSchemas() {
-  if (AI.schemas) return AI.schemas;
-  const nul = s => ({ anyOf: [s, { type: 'null' }] }), obj = props => ({ type: 'object', properties: props, required: Object.keys(props), additionalProperties: false });
-  const optVals = {}; PRODUCTS.forEach(p => p.opts.forEach(o => { optVals[o.key] = optVals[o.key] || []; o.values.forEach(([v]) => { if (!optVals[o.key].includes(v)) optVals[o.key].push(v); }); }));
-  const options = obj(Object.fromEntries(Object.entries(optVals).map(([k, vals]) => [k, nul({ enum: vals })])));
-  const wall = { type: 'string', enum: WALLS };
-  const item = obj({
-    product: { type: 'string', enum: PRODUCTS.map(p => p.id) }, purpose: { type: 'string' }, finish: { type: 'integer' }, options,
-    placement: obj({ mode: { type: 'string', enum: ['wall', 'counter', 'free'] }, wall: nul(wall), start_cm: nul({ type: 'number' }), x_cm: nul({ type: 'number' }), z_cm: nul({ type: 'number' }), rotation_deg: nul({ type: 'number' }) })
-  });
-  const room = obj({ width_cm: { type: 'number' }, depth_cm: { type: 'number' }, ceiling_cm: { type: 'number' }, wall_paint: { type: 'string', enum: WALL_COLORS }, floor: { type: 'string', enum: FLOORS.map(f => f.id) },
-    openings: { type: 'array', items: obj({ type: { type: 'string', enum: Object.keys(STYLE) }, wall, center_cm: { type: 'number' }, width_cm: nul({ type: 'number' }) }) } });
-  const style = obj({ countertop: { type: 'string', enum: COUNTERS.map(c => c.id) }, handles: { type: 'string', enum: HANDLES.map(x => x[0]) }, wall_tile: { type: 'string', enum: TILES.map(t => t.id) }, tile_coverage: { type: 'string', enum: TILE_COVER.map(t => t[0]) }, cabinet_finish: { type: 'integer' } });
-  const design = obj({ name: { type: 'string' }, layout_type: { type: 'string', enum: ['straight', 'L-shaped', 'U-shaped', 'parallel', 'island', 'peninsula', 'other'] }, concept: { type: 'string' },
-    highlights: { type: 'array', items: { type: 'string' } }, room, style, items: { type: 'array', items: item }, notes: { type: 'array', items: { type: 'string' } } });
-  return AI.schemas = { proposals: obj({ designs: { type: 'array', items: design } }), edit: obj({ change_summary: { type: 'string' }, design }) };
-}
 
 /* ── the call: streamed, schema-constrained, cached system prompt, refusal fallback ── */
-async function aiCall(kind, userText, onProgress) {
-  if (window.__interioMockAI) return window.__interioMockAI(kind, userText, onProgress); // test hook
-  if (aiMode() === 'manual') return aiManual(kind, userText);
-  const client = aiClient(); AI.ctrl = new AbortController();
-  const body = {
-    model: AI.cfg.model, max_tokens: 64000,
-    thinking: { type: 'adaptive', display: 'summarized' },
-    output_config: { effort: AI.cfg.effort, format: { type: 'json_schema', schema: aiSchemas()[kind] } },
-    system: [{ type: 'text', text: aiSystem(), cache_control: { type: 'ephemeral' } }],
-    messages: [{ role: 'user', content: userText }]
-  };
-  if (AI.cfg.model === 'default' && aiMode() !== 'bridge') throw new Error("“Claude Code's default model” only works with the Claude Code bridge — pick a model in AI settings.");
-  if (FALLBACK_MODELS.includes(AI.cfg.model) && aiMode() === 'api') { body.betas = ['server-side-fallback-2026-07-01']; body.fallbacks = 'default'; } // re-run declined requests on Anthropic's recommended fallback model
-  const stream = client.beta.messages.stream(body, { signal: AI.ctrl.signal });
-  let chars = 0;
-  stream.on('thinking', d => onProgress && onProgress({ thinking: d }));
-  stream.on('text', d => { chars += d.length; onProgress && onProgress({ chars }); });
-  const msg = await stream.finalMessage();
-  if (msg.stop_reason === 'refusal') throw new Error(`Claude declined this request${msg.stop_details && msg.stop_details.explanation ? ': ' + msg.stop_details.explanation : '.'}`);
-  if (msg.stop_reason === 'max_tokens') throw new Error('The design was cut off before it finished. Ask for fewer options or a simpler kitchen.');
-  const text = msg.content.filter(b => b.type === 'text').map(b => b.text).join('');
-  try { return JSON.parse(text); } catch (e) { throw new Error('Claude returned a design the planner could not read. Please try again.'); }
-}
 
 /* ── manual mode: the user carries the exact prompt to a Claude chat and pastes the JSON back ── */
-function aiManualPrompt(kind, userText) {
-  return `${aiSystem()}\n\n## Output format\nReply with exactly one JSON object and nothing else — no prose, no code fences, no artifact. It must validate against this JSON Schema:\n${JSON.stringify(aiSchemas()[kind])}\n\n## Request\n${userText}`;
-}
-function parseAIReply(kind, raw) {
-  let t = String(raw || '').trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '');
-  const a = t.indexOf('{'), b = t.lastIndexOf('}'); if (a < 0 || b < a) throw new Error("That doesn't contain a JSON object. Copy Claude's whole reply.");
-  let j; try { j = JSON.parse(t.slice(a, b + 1)); } catch (e) { throw new Error('The JSON is incomplete or broken (' + e.message + '). Ask Claude to resend the full JSON only.'); }
-  if (kind === 'proposals' && !Array.isArray(j.designs)) { if (j.room && j.items) j = { designs: [j] }; else throw new Error('Expected {"designs": [...]} — this looks like a different answer.'); }
-  if (kind === 'edit' && !j.design) { if (j.room && j.items) j = { change_summary: '', design: j }; else throw new Error('Expected {"change_summary": ..., "design": {...}}.'); }
-  return j;
-}
-function aiManual(kind, userText) {
-  return new Promise((resolve, reject) => {
-    const prompt = aiManualPrompt(kind, userText), err = h('p', { class: 'ai-msg bad', role: 'alert' });
-    const reply = h('textarea', { class: 'field mono', rows: 7, placeholder: "Paste Claude's JSON reply here", 'aria-label': "Claude's reply" });
-    const copyBtn = h('button', { class: 'pill-btn primary', onclick: () => { (navigator.clipboard ? navigator.clipboard.writeText(prompt) : Promise.reject()).then(() => { copyBtn.textContent = 'Copied ✓'; }, () => { pre.focus(); pre.select(); copyBtn.textContent = 'Press Ctrl/⌘+C'; }); } }, 'Copy prompt');
-    const pre = h('textarea', { class: 'field mono', rows: 5, readonly: true, 'aria-label': 'Prompt to send' }, prompt);
-    let settled = false;
-    const close = modal(h('div', null, h('h3', null, 'Send this to Claude'),
-      h('ol', { class: 'steps' }, h('li', null, 'Copy the prompt (', String(Math.round(prompt.length / 1000)), 'k characters — it includes the catalogue and the output schema).'),
-        h('li', null, 'Paste it into a new chat at ', h('a', { href: 'https://claude.ai/new', target: '_blank', rel: 'noopener' }, 'claude.ai'), ' or into Claude Code, and send.'),
-        h('li', null, 'Copy the whole JSON reply and paste it below.')),
-      h('div', { style: 'display:flex;gap:8px;margin:8px 0' }, copyBtn), pre, reply, err,
-      h('div', { class: 'actions' }, h('button', { class: 'pill-btn', onclick: () => close() }, 'Cancel'),
-        h('button', { class: 'pill-btn primary', onclick: () => { try { const j = parseAIReply(kind, reply.value); settled = true; close(); resolve(j); } catch (e) { err.textContent = e.message; } } }, 'Use this reply'))), true,
-      () => { if (!settled) { settled = true; const e = new Error('Cancelled.'); e.name = 'AbortError'; reject(e); } });
-    void close;
-  });
-}
 
 /* ── spec → room + placed units (the deterministic "physics" step) ── */
-function realizeDesign(dz) {
+function realizeDesign(dz, post) {
   const issues = [], room0 = dz.room || {}, st = dz.style || {};
   const W = clamp((room0.width_cm || 300) / 100, 1.8, 12), D = clamp((room0.depth_cm || 270) / 100, 1.5, 12), Hc = clamp((room0.ceiling_cm || 275) / 100, 2.3, 3.8);
   const fin = clamp(Math.round(st.cabinet_finish || 0), 0, FINISHES.length - 1);
@@ -2061,27 +2003,11 @@ function realizeDesign(dz) {
       if (p.mount === 'counter' && shapeOf(tmp).y0 < .01) issues.push(`The ${nm} isn't on a worktop.`);
       S.items.push(tmp);
     }
+    if (post) post();
     return { room: R, items: S.items.map(i => ({ pid: i.pid, v: i.v, cfg: i.cfg, x: i.x, z: i.z, rot: i.rot, wall: i.wall, purpose: i.purpose })), issues };
   } finally { S.room = save[0]; S.items = save[1]; }
 }
 /* current state → the same spec format (so Claude sees the user's manual edits) */
-function currentSpec() {
-  const R = S.room, st = styleOf(), ai = S.ai || {};
-  const nullOpts = () => { const o = {}; PRODUCTS.forEach(p => p.opts.forEach(x => o[x.key] = null)); return o; };
-  return {
-    name: S.title, layout_type: ai.layout_type || 'other', concept: ai.concept || '', highlights: ai.highlights || [], notes: ai.notes || [],
-    room: { width_cm: Math.round((R.x1 - R.x0) * 100), depth_cm: Math.round((R.z1 - R.z0) * 100), ceiling_cm: Math.round(R.h * 100), wall_paint: R.wall, floor: R.floor,
-      openings: R.feats.map(f => ({ type: f.style, wall: f.wall, center_cm: Math.round(f.u * 100), width_cm: Math.round(f.w * 100) })) },
-    style: { countertop: st.counter, handles: st.handle, wall_tile: st.tile, tile_coverage: st.tileCover, cabinet_finish: R.fin || 0 },
-    items: S.items.map(it => {
-      const p = P(it.pid), sh = shapeOf(it), options = Object.assign(nullOpts(), it.cfg);
-      let placement;
-      if (it.wall) { const ax = alongAxis(it.wall), base = ax === 'x' ? R.x0 : R.z0, lo = (ax === 'x' ? sh.x - sh.hw : sh.z - sh.hd) - base; placement = { mode: p.mount === 'counter' ? 'counter' : 'wall', wall: it.wall, start_cm: Math.round(lo * 100), x_cm: null, z_cm: null, rotation_deg: null }; }
-      else placement = { mode: p.mount === 'counter' ? 'free' : 'free', wall: null, start_cm: null, x_cm: Math.round((it.x - R.x0) * 100), z_cm: Math.round((it.z - R.z0) * 100), rotation_deg: Math.round(it.rot) };
-      return { product: it.pid, purpose: it.purpose || '', finish: it.v, options, placement };
-    })
-  };
-}
 function docFromDesign(dz, real, extra = {}) {
   return Object.assign({ id: uid(), templateId: 'ai', title: dz.name || 'AI kitchen', room: real.room, items: real.items, kitchen: 1, updated: Date.now(),
     ai: { concept: dz.concept || '', highlights: dz.highlights || [], notes: dz.notes || [], layout_type: dz.layout_type || 'other', issues: real.issues } }, extra);
@@ -2135,18 +2061,6 @@ function showAISettings(onSaved) {
 const BRIEF_DEFAULT = { widthFt: '', depthFt: '', ceilingFt: '9', layout: 'any', people: 4, cooking: 'heavy', budget: 3, must: ['ro', 'microwave'], mood: '', openings: '', extra: '', count: 3 };
 const MUSTS = [['pantry', 'Tall pantry'], ['oven', 'Built-in oven'], ['dishwasher', 'Dishwasher'], ['loft', 'Loft storage'], ['ro', 'RO purifier'], ['microwave', 'Microwave'], ['seating', 'Breakfast seating'], ['bigfridge', 'Double-door fridge']];
 const MOODS = ['Warm wood & white quartz', 'All-white minimal', 'Sage green & brass', 'Navy & marble', 'Dark & dramatic', 'Colourful Moroccan'];
-function briefText(b) {
-  const lines = [`Design ${b.count} different kitchen options for this home. Return them in "designs".`, ''];
-  lines.push(`Room: ${b.widthFt && b.depthFt ? `${b.widthFt} ft wide (west–east) × ${b.depthFt} ft deep (north–south)` : 'size not given — assume a realistic urban Indian kitchen and say so in notes'}; ceiling ${b.ceilingFt || 9} ft.`);
-  if (b.openings) lines.push(`Doors and windows: ${b.openings}`);
-  lines.push(`Layout preference: ${b.layout === 'any' ? 'no preference — choose what suits the room' : b.layout}.`);
-  lines.push(`Household: ${b.people} people. Cooking: ${{ heavy: 'heavy Indian cooking every day (tadka, deep-frying, pressure cooker)', moderate: 'regular home cooking', light: 'light cooking, mostly reheating and quick meals' }[b.cooking]}.`);
-  lines.push(`Budget: about ₹${b.budget} lakh for units and appliances.`);
-  if (b.must.length) lines.push(`Must have: ${b.must.map(m => (MUSTS.find(x => x[0] === m) || [m, m])[1]).join(', ')}.`);
-  if (b.mood) lines.push(`Style: ${b.mood}.`);
-  if (b.extra) lines.push(`Also: ${b.extra}`);
-  return lines.join('\n');
-}
 function renderBrief() {
   const root = $('#ai-brief'); if (!root) return;
   const b = Object.assign({}, BRIEF_DEFAULT, store.get('brief', {})), save = () => store.set('brief', b);
@@ -2171,17 +2085,357 @@ function renderBrief() {
       h('button', { class: 'pill-btn', onclick: () => showAISettings(renderBrief) }, 'AI settings'), h('span', { class: 'muted', style: 'font-size:13px' }, (aiReady() ? `${AI_MODE_NAME[aiMode()]} · ${(AI_MODELS.find(m => m[0] === AI.cfg.model) || ['', AI.cfg.model])[1].split(' — ')[0]}` : 'Not connected yet'))),
     status));
 }
+function openDoc(doc) { const d = docs(), copy = JSON.parse(JSON.stringify(doc)); copy.id = uid(); copy.updated = Date.now(); d[copy.id] = copy; store.set('designs', d); location.hash = `#ai/${copy.id}`; }
+
+/* ── planner: the AI tab (explain, ask for changes, undo) ── */
+
+/* ═══════════════ 13b · KDL — the compact Kitchen Design Language Claude writes (≈10 lines instead of ≈2.5k tokens of JSON) ═══════════════
+   Principle: the less the model has to say, the less it can vary and the faster it answers. Claude decides only what needs
+   judgement — room, openings, layout, the order of floor units, style. A deterministic control layer adds the rest:
+   chimney over every hob, wall cabinets over base units (never over windows), lofts, counter appliances, stools. */
+const KDL_FRONT = { '1d': '1door', '2d': '2door', '2dr': '2drawer', '3dr': '3drawer', '4dr': '4drawer', open: 'open', blind: 'blind' };
+const KDL_TYPES = ['straight', 'L-shaped', 'U-shaped', 'parallel', 'island', 'peninsula'];
+function kdlPrice(pid, cfg) { const p = P(pid); return Math.round(p.price(Object.assign(defCfg(p), cfg || {}), p.variants[0]) / 1000) + 'k'; }
+function kdlSystem() {
+  if (AI.kdlSys) return AI.kdlSys;
+  const ids = a => a.join(' ');
+  AI.kdlSys = `You design modular kitchens for Indian homes. Answer ONLY in KDL lines (no prose, no code fences).
+
+KDL
+NAME <2-4 words>
+TYPE <${KDL_TYPES.join('|')}>
+IDEA <one sentence>
+HI <short highlight>            (2-4 lines)
+ROOM <width> <depth> <ceiling>  cm. width = west→east, depth = north→south
+DOOR <N|E|S|W> <centre>         centre in cm from the wall's start
+WINDOW <N|E|S|W> <centre> [double]
+STYLE <finish> <countertop> <handles> <tile> <cover> <floor> [<chimney>]
+RUN <N|E|S|W> <start>: <unit> <unit> ...
+ISLAND <x> <z> <N|E|S|W>: <unit> ...   centre x z in cm from the NW corner; N|E|S|W = the side people cook from
+ADD <microwave|otg|mixer|ro|loft|stools2|stools3>...
+
+Walls start: N and S at the west end, W and E at the north end. A RUN lists floor units back-to-back from <start>.
+Units (width cm): b<30|45|60|75|90|120>[.2d|1d|2dr|3dr|4dr|open|blind]  sink<60|75|90|120>[.drainer|single|double]
+hob<60|75|90>[.2|3|4|5][.oven]  dw<60|45>  tall<60|45>.<pantry|oven|broom>  fridge.<single(60)|double(70)|sxs(91)>  gap<cm>
+Base units are 60 deep. Chimney, wall cabinets and loft are added automatically above the RUNs.
+
+Rules
+- Must have one sink and one hob. Sink under a window when there is one. ≥45 cm of counter between sink and hob.
+- Each RUN must fit its wall (start + sum of widths ≤ wall length). Where two RUNs meet at a corner, the second starts at 60.
+- Keep 100 cm clear in front of doors; no units across a door. Fridge/tall units never under a window.
+- Parallel: the two RUNs go on the two long walls facing each other, never the door wall. Aisles 100-120 cm (parallel runs, islands). Heavy cooking → hob .4/.5 and a 3dr next to it. Work triangle sink-hob-fridge 3.6-7.9 m.
+- Budget in lakh (1 lakh = 100k). Approx ₹: b60 ${kdlPrice('base-cab')} sink90 ${kdlPrice('sink-unit')} hob75 ${kdlPrice('hob-unit')} chimney ${kdlPrice('chimney')} wall-cabinet60 ${kdlPrice('wall-cab')} fridge.double ${kdlPrice('fridge', { type: 'double' })} fridge.sxs ${kdlPrice('fridge', { type: 'sxs' })} tall.oven ${kdlPrice('tall', { cfg: 'oven' })} dw ${kdlPrice('dishwasher')} microwave ${kdlPrice('microwave')}.
+
+STYLE values
+finish 0-7: ${FINISHES.map((f, i) => i + ' ' + f.n).join(', ')}
+countertop: ${ids(COUNTERS.map(c => c.id))}
+handles: ${ids(HANDLES.map(h => h[0]))}
+tile: ${ids(TILES.map(t => t.id))}
+cover: ${ids(TILE_COVER.map(t => t[0]))}
+floor: ${FLOORS.map(f => f.id + ' ' + f.name.split(' ')[0].toLowerCase()).join(', ')}
+chimney: pyramid tshape curved filterless
+
+Example
+NAME Sage Tadka Corner
+TYPE L-shaped
+IDEA Sage L with the sink under the west window and the hob on the long north run.
+HI 5-burner hob with chimney
+HI Sink under the window
+ROOM 300 270 275
+DOOR S 230
+WINDOW W 130
+STYLE 2 quartz-white gola subway-sage splash f1 curved
+RUN N 0: b90.blind b60.3dr hob75.5 b60.2d fridge.double
+RUN W 60: sink90.drainer dw60 b45.1d
+ADD microwave ro`;
+  return AI.kdlSys;
+}
+function kdlBrief(b, variant) {
+  const ft = v => Math.round(parseFloat(v) * 30.48);
+  const room = b.widthFt && b.depthFt ? `ROOM ${ft(b.widthFt)} ${ft(b.depthFt)} ${ft(b.ceilingFt || 9)} (N and S walls ${ft(b.widthFt)} cm long, W and E walls ${ft(b.depthFt)} cm)` : `not given — choose a realistic urban Indian kitchen, ceiling ${ft(b.ceilingFt || 9)}`;
+  const must = b.must.map(m => (MUSTS.find(x => x[0] === m) || [m, m])[1].toLowerCase()).join(', ');
+  return [`Room: ${room}.`, b.openings ? `Openings: ${b.openings}.` : '', `Layout: ${b.layout === 'any' ? 'your choice' : b.layout}.`,
+    `${b.people} people, ${{ heavy: 'heavy Indian cooking daily', moderate: 'regular cooking', light: 'light cooking' }[b.cooking]}. Budget ₹${b.budget} lakh.`,
+    must ? `Must have: ${must}.` : '', b.mood ? `Look: ${b.mood}.` : '', b.extra ? `Also: ${b.extra}` : '', variant ? `Variant: ${variant}` : ''].filter(Boolean).join('\n');
+}
+
+/* parse KDL (tolerant: unknown lines are ignored and reported) */
+function parseKDL(text) {
+  const d = { name: '', type: 'other', idea: '', hi: [], notes: [], room: null, openings: [], style: {}, runs: [], islands: [], adds: [], warnings: [] };
+  const lines = String(text || '').replace(/```[a-z]*|```/gi, '').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  const num = v => { const n = parseFloat(v); return isFinite(n) ? n : null; };
+  for (const line of lines) {
+    const m = line.match(/^([A-Za-z]+)\s*(.*)$/); if (!m) continue;
+    const kw = m[1].toUpperCase(), rest = m[2].trim();
+    if (kw === 'NAME') d.name = rest.slice(0, 60);
+    else if (kw === 'TYPE') d.type = KDL_TYPES.find(t => t.toLowerCase() === rest.toLowerCase()) || 'other';
+    else if (kw === 'IDEA') d.idea = rest;
+    else if (kw === 'HI') { if (d.hi.length < 5) d.hi.push(rest); }
+    else if (kw === 'NOTE') d.notes.push(rest);
+    else if (kw === 'ROOM') { const [w, dp, c] = rest.split(/\s+/).map(num); if (w && dp) d.room = { w, d: dp, h: c || 275 }; }
+    else if (kw === 'DOOR' || kw === 'WINDOW') { const [wall, c, x] = rest.split(/\s+/); if (WALLS.includes((wall || '').toUpperCase()) && num(c) != null) d.openings.push({ kind: kw.toLowerCase(), wall: wall.toUpperCase(), c: num(c), double: /double/i.test(x || '') }); }
+    else if (kw === 'STYLE') { const t = rest.split(/\s+/); d.style = { finish: num(t[0]), counter: t[1], handle: t[2], tile: t[3], cover: t[4], floor: t[5], chimney: t[6] }; }
+    else if (kw === 'RUN') { const mm = rest.match(/^([NESW])\s+(-?\d+(?:\.\d+)?)\s*:\s*(.+)$/i); if (mm) d.runs.push({ wall: mm[1].toUpperCase(), start: +mm[2], units: mm[3].split(/\s+/) }); else d.warnings.push('Ignored a RUN line: ' + line); }
+    else if (kw === 'ISLAND') { const mm = rest.match(/^(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s+(?:faces?\s+)?([NESW])\s*:\s*(.+)$/i); if (mm) d.islands.push({ x: +mm[1], z: +mm[2], faces: mm[3].toUpperCase(), units: mm[4].split(/\s+/) }); else d.warnings.push('Ignored an ISLAND line: ' + line); }
+    else if (kw === 'ADD') d.adds.push(...rest.toLowerCase().split(/[\s,]+/).filter(Boolean));
+  }
+  if (!d.room) throw new Error('The design had no ROOM line.');
+  if (!d.runs.length && !d.islands.length) throw new Error('The design had no units (RUN lines).');
+  return d;
+}
+/* one KDL unit token → { pid, cfg, gapCm } */
+function kdlUnit(tok) {
+  const t = tok.toLowerCase(), parts = t.split('.'), head = parts[0], opt = parts.slice(1), w = parseInt(head.replace(/^\D+/, ''), 10);
+  if (head.startsWith('gap')) return { gap: w || 0 };
+  if (/^b\d/.test(head)) return { pid: 'base-cab', cfg: { w, front: KDL_FRONT[opt[0]] || (w <= 45 ? '1door' : '2door') } };
+  if (head.startsWith('sink')) return { pid: 'sink-unit', cfg: { w: w || 90, bowl: ['drainer', 'single', 'double'].find(x => opt.includes(x)) || 'drainer', sink: opt.includes('black') ? 'black' : 'steel' } };
+  if (head.startsWith('hob')) return { pid: 'hob-unit', cfg: { w: w || 75, burners: +(opt.find(x => /^[2-5]$/.test(x)) || 4), below: opt.includes('oven') ? 'oven' : 'drawers' } };
+  if (head.startsWith('dw')) return { pid: 'dishwasher', cfg: { w: w || 60 } };
+  if (head.startsWith('tall')) return { pid: 'tall', cfg: { w: w || 60, cfg: ['pantry', 'oven', 'broom'].find(x => opt.includes(x)) || 'pantry' } };
+  if (head.startsWith('fridge')) return { pid: 'fridge', cfg: { type: ['single', 'double', 'sxs'].find(x => opt.includes(x)) || 'double' } };
+  return null;
+}
+
+/* control layer · run fitter: pack a RUN into the free stretches of its wall. Door keep-outs (same wall, and doors on the
+   neighbouring wall that swing into this run's corner) are excluded. If the run is too long: drop gaps, trim flexible
+   base-cabinet widths, then drop plain base cabinets / dishwasher / tall units — sink, hob and fridge stay. Finally hob,
+   fridge and tall units are shuffled out from under windows (a chimney or a tall box can't go there). */
+const ADJ = { N: ['E', 'W'], S: ['E', 'W'], E: ['N', 'S'], W: ['N', 'S'] }, ESSENTIAL_TOK = /^(sink|hob|fridge)/i, FLEX_W = [120, 90, 75, 60, 45, 30], DROP_ORDER = ['base-cab', 'dishwasher', 'tall'], NOT_UNDER_WINDOW = ['hob-unit', 'fridge', 'tall'];
+function runKeepOut(wall, d) {
+  const W = d.room.w, D = d.room.d, L = (wall === 'N' || wall === 'S') ? W : D, out = [];
+  for (const o of d.openings.filter(o => o.kind === 'door')) {
+    const hw = 45;
+    if (o.wall === wall) { out.push([o.c - hw - 10, o.c + hw + 10]); continue; }
+    const strip = { E: [W - 65, W], W: [0, 65], N: [0, 65], S: [D - 65, D] }[wall];
+    const perp = (wall === 'N' || wall === 'S') ? (o.wall === 'W' || o.wall === 'E') : (o.wall === 'N' || o.wall === 'S');
+    if (!perp || o.c + hw <= strip[0] || o.c - hw >= strip[1]) continue;
+    const reach = 90 + 10; // a 90 cm leaf sweeps ~90 cm into the room
+    out.push((o.wall === 'N' || o.wall === 'W') ? [0, reach] : [L - reach, L]);
+  }
+  return out.sort((a, b) => a[0] - b[0]);
+}
+function packRun(units, segs) {
+  const out = [], miss = []; let si = 0, cur = segs.length ? segs[0][0] : 0;
+  for (const u of units) {
+    if (u.gap != null) { cur += u.gap; continue; }
+    while (si < segs.length && Math.max(cur, segs[si][0]) + u.w > segs[si][1] + .5) { si++; if (si < segs.length) cur = segs[si][0]; }
+    if (si >= segs.length) { miss.push(u); continue; }
+    cur = Math.max(cur, segs[si][0]); out.push({ u, pid: u.pid, cfg: u.cfg, start: cur }); cur += u.w;
+  }
+  return { out, miss };
+}
+function fitRun(run, d, issues) {
+  const L = (run.wall === 'N' || run.wall === 'S') ? d.room.w : d.room.d, wn = WALL_NAME[run.wall].toLowerCase();
+  const segs = []; let a = Math.max(0, run.start);
+  for (const [d0, d1] of runKeepOut(run.wall, d)) { if (d1 <= a) continue; if (d0 > a) segs.push([a, Math.min(d0, L)]); a = Math.max(a, d1); }
+  if (a < L) segs.push([a, L]);
+  const wins = d.openings.filter(o => o.kind === 'window' && o.wall === run.wall).map(o => { const hw = o.double ? 75 : 50; return [o.c - hw, o.c + hw]; });
+  const units = run.units.map(tok => { const u = kdlUnit(tok); if (!u) issues.push(`Didn't recognise the unit "${tok}".`); else u.tok = tok; return u; }).filter(Boolean)
+    .map(u => u.gap != null ? u : Object.assign(u, { w: Math.round(dimsOf(P(u.pid), Object.assign(defCfg(P(u.pid)), u.cfg)).w * 100) }));
+  const room = () => segs.reduce((s, [x, y]) => s + (y - x), 0), need = () => units.reduce((s, u) => s + (u.gap != null ? u.gap : u.w), 0);
+  const trimOne = () => {
+    const g = units.findIndex(u => u.gap != null); if (g >= 0) { units.splice(g, 1); return true; }
+    const b = units.filter(u => u.pid === 'base-cab' && FLEX_W.indexOf(u.cfg.w) < FLEX_W.length - 1).sort((x, y) => y.w - x.w)[0];
+    if (b) { b.cfg.w = FLEX_W[Math.max(0, FLEX_W.indexOf(b.cfg.w)) + 1]; b.w = b.cfg.w; return true; }
+    return false;
+  };
+  let trimmed = false; const dropped = [];
+  while (need() > room() && trimOne()) trimmed = true;
+  let res = packRun(units, segs);
+  while (res.miss.length) {
+    if (trimOne()) { trimmed = true; res = packRun(units, segs); continue; }
+    let k = -1; for (const pid of DROP_ORDER) { k = units.map(u => u.pid).lastIndexOf(pid); if (k >= 0) break; }
+    if (k < 0) break;
+    dropped.push(units.splice(k, 1)[0]); res = packRun(units, segs);
+  }
+  // keep hob / fridge / tall units out from under windows by moving them along the run
+  const bad = r => r.miss.length * 10 + r.out.filter(p => NOT_UNDER_WINDOW.includes(p.pid) && wins.some(([w0, w1]) => p.start < w1 - 1 && p.start + p.u.w > w0 + 1)).length;
+  for (let pass = 0; pass < 3 && wins.length && bad(res) > 0; pass++) {
+    let best = null;
+    units.forEach((u, i) => { if (!NOT_UNDER_WINDOW.includes(u.pid)) return;
+      for (let j = 0; j < units.length; j++) { if (j === i) continue; const t = units.slice(); t.splice(j, 0, t.splice(i, 1)[0]); const r = packRun(t, segs); if (!best || bad(r) < best.s) best = { s: bad(r), t, r }; } });
+    if (!best || best.s >= bad(res)) break;
+    units.splice(0, units.length, ...best.t); res = best.r;
+  }
+  // still under a window: slide that unit (and the ones after it in the same free stretch) into the stretch's slack
+  for (const p of res.out) {
+    if (!NOT_UNDER_WINDOW.includes(p.pid) || !wins.some(([w0, w1]) => p.start < w1 - 1 && p.start + p.u.w > w0 + 1)) continue;
+    const seg = segs.find(([x, y]) => p.start >= x - .5 && p.start < y), tail = res.out.filter(q => q.start >= p.start && q.start < seg[1]);
+    const slack = seg[1] - Math.max(...tail.map(q => q.start + q.u.w));
+    if (slack > 0 && !wins.some(([w0, w1]) => p.start + slack < w1 - 1 && p.start + slack + p.u.w > w0 + 1)) tail.forEach(q => { q.start += slack; });
+  }
+  if (trimmed) issues.push(`Trimmed cabinet widths so the ${wn} run fits.`);
+  if (dropped.length) issues.push(`Left out ${dropped.length} unit${dropped.length > 1 ? 's' : ''} (${[...new Set(dropped.map(u => P(u.pid).name.toLowerCase()))].join(', ')}) that didn't fit on the ${wn}.`);
+  const placed = res.out.map(({ pid, cfg, start }) => ({ pid, cfg, start }));
+  placed.miss = res.miss.map(u => u.tok); placed.dropped = dropped.length;
+  placed.under = res.out.filter(p => NOT_UNDER_WINDOW.includes(p.pid) && wins.some(([w0, w1]) => p.start < w1 - 1 && p.start + p.u.w > w0 + 1)).map(p => p.u.tok);
+  for (const u of res.miss) if (!ESSENTIAL_TOK.test(u.tok)) issues.push(`No room left on the ${wn} for the ${P(u.pid).name.toLowerCase()}.`);
+  return placed;
+}
+/* KDL → room + placed units, via the same physics as everything else (realizeDesign), plus the control layer */
+function realizeKDL(d) {
+  const st = d.style || {}, fin = Number.isInteger(st.finish) ? clamp(st.finish, 0, FINISHES.length - 1) : 0, issues = [...d.warnings];
+  const optVals = {}; PRODUCTS.forEach(p => p.opts.forEach(o => { optVals[o.key] = null; }));
+  const mk = (pid, cfg, placement, finish) => ({ product: pid, purpose: '', finish: finish ?? (P(pid).variants[0].fin ? fin : 0), options: Object.assign({}, optVals, cfg), placement: Object.assign({ mode: 'wall', wall: null, start_cm: null, x_cm: null, z_cm: null, rotation_deg: null }, placement) });
+  const items = [];
+  // a hob needs a chimney, and a chimney needs a wall: hobs on an island move to the longest RUN (a base cabinet takes their place)
+  for (const isl of d.islands) isl.units.forEach((t, i) => { if (/^hob/i.test(t) && d.runs.length) { d.runs.slice().sort((a, b) => b.units.length - a.units.length)[0].units.push(t); isl.units[i] = 'b60.3dr'; issues.push('Moved the hob from the island to a wall so it can have a chimney.'); } });
+  const fits = d.runs.map(run => fitRun(run, d, issues));
+  // a sink, hob or fridge that didn't fit goes to the wall where it costs least: another RUN, or an empty wall
+  // (a hob, fridge or tall unit stuck under a window is moved the same way, if another wall takes it cleanly)
+  for (let r = 0; r < d.runs.length; r++) for (const tok of fits[r].under.filter(t => !fits[r].miss.includes(t))) {
+    const used = d.runs.map(x => x.wall), empty = WALLS.filter(w => !used.includes(w)).map(w => ({ wall: w, start: used.some(u => ADJ[w].includes(u)) ? 60 : 0, units: [], fresh: true }));
+    for (const cand of d.runs.filter((_, k) => k !== r).concat(empty)) {
+      const trial = Object.assign({}, cand, { units: cand.units.concat(tok) }), out = fitRun(trial, d, []);
+      if (out.miss.length || out.under.length || out.dropped) continue;
+      const rest = Object.assign({}, d.runs[r], { units: d.runs[r].units.filter((t, i, a) => i !== a.indexOf(tok)) }), outR = fitRun(rest, d, []);
+      d.runs[r] = rest; fits[r] = outR;
+      if (cand.fresh) { d.runs.push(trial); fits.push(out); } else { const k = d.runs.indexOf(cand); d.runs[k] = trial; fits[k] = out; }
+      issues.push(`Moved the ${P(kdlUnit(tok).pid).name.toLowerCase()} to the ${WALL_NAME[cand.wall].toLowerCase()} to keep it clear of the window.`); break;
+    }
+  }
+  for (let r = 0; r < d.runs.length; r++) for (const tok of fits[r].miss) {
+    const used = d.runs.map(x => x.wall), empty = WALLS.filter(w => !used.includes(w)).map(w => ({ wall: w, start: used.some(u => ADJ[w].includes(u)) ? 60 : 0, units: [], fresh: true }));
+    let best = null;
+    for (const cand of d.runs.filter((_, k) => k !== r).concat(empty)) {
+      const trial = Object.assign({}, cand, { units: cand.units.concat(tok) }), tmp = [], out = fitRun(trial, d, tmp), cost = (out.miss.length ? 100 : 0) + out.dropped * 3 + (cand.fresh ? 2 : 0);
+      if (!best || cost < best.cost) best = { cost, cand, trial, out, tmp };
+    }
+    if (best && !best.out.miss.length) {
+      issues.push(`Moved the ${P(kdlUnit(tok).pid).name.toLowerCase()} to the ${WALL_NAME[best.cand.wall].toLowerCase()} — it didn't fit on the ${WALL_NAME[d.runs[r].wall].toLowerCase()}.`);
+      if (best.cand.fresh) { d.runs.push(best.trial); fits.push(best.out); } else { const k = d.runs.indexOf(best.cand); d.runs[k] = best.trial; fits[k] = best.out; }
+      issues.push(...best.tmp.filter(m => !issues.includes(m)));
+    } else issues.push(`No room anywhere for the ${P(kdlUnit(tok).pid).name.toLowerCase()}.`);
+  }
+  d.runs.forEach((run, k) => { for (const pl of fits[k]) items.push(mk(pl.pid, pl.cfg, { mode: 'wall', wall: run.wall, start_cm: pl.start })); });
+  for (const isl of d.islands) {
+    const units = isl.units.map(kdlUnit).filter(u => u && u.pid), widths = units.map(u => Math.round(dimsOf(P(u.pid), Object.assign(defCfg(P(u.pid)), u.cfg)).w * 100));
+    const total = widths.reduce((a, b) => a + b, 0), alongX = isl.faces === 'N' || isl.faces === 'S', rot = { S: 0, N: 180, E: 90, W: -90 }[isl.faces];
+    let cur = -total / 2;
+    units.forEach((u, i) => { const c = cur + widths[i] / 2; items.push(mk(u.pid, u.cfg, { mode: 'free', x_cm: alongX ? isl.x + c : isl.x, z_cm: alongX ? isl.z : isl.z + c, rotation_deg: rot })); cur += widths[i]; });
+  }
+  const spec = {
+    name: d.name, layout_type: d.type, concept: d.idea, highlights: d.hi, notes: d.notes,
+    room: { width_cm: d.room.w, depth_cm: d.room.d, ceiling_cm: d.room.h, wall_paint: DEFAULT_WALL, floor: FLOORS.some(f => f.id === st.floor) ? st.floor : 'f0',
+      openings: d.openings.map(o => ({ type: o.kind === 'door' ? 'single' : (o.double ? 'w2' : 'w1'), wall: o.wall, center_cm: o.c, width_cm: null })) },
+    style: { countertop: COUNTERS.some(c => c.id === st.counter) ? st.counter : DEFAULT_STYLE.counter, handles: HANDLES.some(h => h[0] === st.handle) ? st.handle : DEFAULT_STYLE.handle,
+      wall_tile: TILES.some(t => t.id === st.tile) ? st.tile : DEFAULT_STYLE.tile, tile_coverage: TILE_COVER.some(t => t[0] === st.cover) ? st.cover : DEFAULT_STYLE.tileCover, cabinet_finish: fin },
+    items
+  };
+  const chimStyle = ['pyramid', 'tshape', 'curved', 'filterless'].includes(st.chimney) ? st.chimney : 'pyramid';
+  const real = realizeDesign(spec, () => controlLayer({ adds: d.adds, chimStyle, fin, issues }));
+  real.issues = issues.concat(real.issues);
+  return { spec, real };
+}
+/* the deterministic control layer (runs inside realizeDesign's scene context) */
+function controlLayer({ adds, chimStyle, fin, issues }) {
+  const place = (pid, cfg, sh, why) => { if (!sh || collides(sh, sh._tmp) || featureHit(sh, true)) return false; const it = sh._tmp; applyShape(it, sh); S.items.push(it); void why; return true; };
+  const tmpItem = (pid, cfg, v) => ({ uid: uid(), pid, v: v ?? (P(pid).variants[0].fin ? fin : 0), cfg: Object.assign(defCfg(P(pid)), cfg), x: 0, z: 0, rot: 0, wall: null, purpose: '' });
+  const at = (it, wall, a0) => { const d = dimsOf(P(it.pid), it.cfg), ax = alongAxis(wall), base = ax === 'x' ? S.room.x0 : S.room.z0; const sh = wallPlace(it, wall, base + a0 + d.w / 2); sh._tmp = it; return sh; };
+  const floor = S.items.filter(i => i.wall && P(i.pid).mount === 'floor');
+  // 1 · a chimney over every hob, same width when possible
+  for (const hob of floor.filter(i => P(i.pid).essential === 'stove')) {
+    const s = shapeOf(hob), ax = alongAxis(hob.wall), base = ax === 'x' ? S.room.x0 : S.room.z0, [a0, a1] = alongOf(s, ax), w = [90, 75, 60].find(x => x <= Math.round((a1 - a0) * 100) + 1) || 60;
+    const it = tmpItem('chimney', { w, style: chimStyle }), off = ((a1 - a0) - w / 100) / 2;
+    if (!place('chimney', null, at(it, hob.wall, a0 - base + off))) issues.push('No room for a chimney above the hob — a window or cabinet is in the way.');
+  }
+  // 2 · wall cabinets above base units (skipped over windows and where they would clash)
+  for (const u of floor.filter(i => P(i.pid).counter && P(i.pid).essential !== 'stove')) {
+    const s = shapeOf(u), ax = alongAxis(u.wall), base = ax === 'x' ? S.room.x0 : S.room.z0, [a0, a1] = alongOf(s, ax);
+    let cur = a0 - base, left = Math.round((a1 - a0) * 100);
+    while (left >= 30) { const w = [90, 75, 60, 45, 30].find(x => x <= left); const it = tmpItem('wall-cab', { w, front: w <= 45 ? '1door' : '2door', hh: 70 }); place('wall-cab', null, at(it, u.wall, cur)); cur += w / 100; left -= w; }
+  }
+  // 3 · lofts above fridges and tall units (when asked for)
+  if (adds.includes('loft')) for (const u of floor.filter(i => ['fridge', 'tall'].includes(P(i.pid).role))) {
+    const s = shapeOf(u), ax = alongAxis(u.wall), base = ax === 'x' ? S.room.x0 : S.room.z0, [a0, a1] = alongOf(s, ax), w = [120, 90, 60].find(x => x <= Math.round((a1 - a0) * 100) + 1);
+    if (w) place('loft', null, at(tmpItem('loft', { w }), u.wall, a0 - base));
+  }
+  // 4 · counter appliances, purifier, stools
+  const near = pid => { const i = S.items.find(x => x.pid === pid || P(x.pid).essential === pid); return i ? { x: i.x, z: i.z } : null; };
+  for (const a of adds) {
+    if (['microwave', 'otg', 'mixer'].includes(a)) { const it = tmpItem(a, {}); const sh = findSlot(it, a === 'mixer' ? near('stove') : null); if (sh) { sh._tmp = it; place(a, null, sh); } else issues.push(`No free worktop for the ${a}.`); }
+    else if (a === 'ro') { const it = tmpItem('ro', {}); const sh = findSlot(it, near('sink')); if (sh) { sh._tmp = it; place('ro', null, sh); } }
+    else if (/^stools?\d*$/.test(a)) {
+      const n = clamp(parseInt(a.replace(/\D/g, ''), 10) || 3, 1, 6), isl = S.items.filter(i => !i.wall && P(i.pid).counter);
+      if (!isl.length) { issues.push('Stools need an island or peninsula — skipped.'); continue; }
+      const xs = isl.map(i => shapeOf(i)), x0 = Math.min(...xs.map(s => s.x - s.hw)), x1 = Math.max(...xs.map(s => s.x + s.hw)), z0 = Math.min(...xs.map(s => s.z - s.hd)), z1 = Math.max(...xs.map(s => s.z + s.hd));
+      const faces = isl[0].rot, back = faces === 180 ? 1 : faces === 0 ? -1 : 0, alongX = faces === 0 || faces === 180;
+      for (let k = 0; k < n; k++) {
+        const t = (k + .5) / n, it = tmpItem('stool', {}), x = alongX ? x0 + (x1 - x0) * t : (faces === 90 ? x0 - .35 : x1 + .35), z = alongX ? (back > 0 ? z1 + .35 : z0 - .35) : z0 + (z1 - z0) * t;
+        const sh = shapeOf(it, x, z, 0); sh._tmp = it; place('stool', null, sh);
+      }
+    }
+  }
+}
+
+/* ── one text call for every connection (API key · Claude Code bridge · copy & paste) ── */
+async function aiText(system, user, onProgress, opt = {}) {
+  if (window.__interioMockAI) return window.__interioMockAI(system, user, onProgress, opt); // test hook
+  if (aiMode() === 'manual') return aiManualText(system, user, opt.title || 'Send this to Claude');
+  if (AI.cfg.model === 'default' && aiMode() !== 'bridge') throw new Error("“Claude Code's default model” only works with the Claude Code bridge — pick a model in AI settings.");
+  const client = aiClient(), ctrl = new AbortController(); (AI.ctrls = AI.ctrls || new Set()).add(ctrl);
+  const body = { model: AI.cfg.model, max_tokens: opt.maxTokens || 2048, thinking: { type: 'adaptive' }, output_config: { effort: opt.effort || 'low' },
+    system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }], messages: [{ role: 'user', content: user }] };
+  if (FALLBACK_MODELS.includes(AI.cfg.model) && aiMode() === 'api') { body.betas = ['server-side-fallback-2026-07-01']; body.fallbacks = 'default'; }
+  try {
+    const stream = client.beta.messages.stream(body, { signal: ctrl.signal });
+    let chars = 0; stream.on('text', t => { chars += t.length; onProgress && onProgress({ chars }); });
+    const msg = await stream.finalMessage();
+    if (msg.stop_reason === 'refusal') throw new Error('Claude declined this request.');
+    if (msg.stop_reason === 'max_tokens') throw new Error('The answer was cut off — try a simpler request.');
+    return msg.content.filter(b => b.type === 'text').map(b => b.text).join('');
+  } finally { AI.ctrls.delete(ctrl); }
+}
+const aiCancelAll = () => { (AI.ctrls || new Set()).forEach(c => c.abort()); };
+function aiManualText(system, user, title) {
+  return new Promise((resolve, reject) => {
+    const prompt = `${system}\n\n---\n${user}`, err = h('p', { class: 'ai-msg bad', role: 'alert' });
+    const reply = h('textarea', { class: 'field mono', rows: 6, placeholder: "Paste Claude's reply here", 'aria-label': "Claude's reply" });
+    const pre = h('textarea', { class: 'field mono', rows: 4, readonly: true, 'aria-label': 'Prompt to send' }, prompt);
+    const copyBtn = h('button', { class: 'pill-btn primary', onclick: () => { (navigator.clipboard ? navigator.clipboard.writeText(prompt) : Promise.reject()).then(() => { copyBtn.textContent = 'Copied ✓'; }, () => { pre.focus(); pre.select(); copyBtn.textContent = 'Press Ctrl/⌘+C'; }); } }, 'Copy prompt');
+    let settled = false;
+    const close = modal(h('div', null, h('h3', null, title),
+      h('ol', { class: 'steps' }, h('li', null, `Copy the prompt (${(prompt.length / 1000).toFixed(1)}k characters).`), h('li', null, 'Send it in a new chat at ', h('a', { href: 'https://claude.ai/new', target: '_blank', rel: 'noopener' }, 'claude.ai'), ' or in Claude Code.'), h('li', null, 'Paste the whole reply below.')),
+      h('div', { style: 'margin:8px 0' }, copyBtn), pre, reply, err,
+      h('div', { class: 'actions' }, h('button', { class: 'pill-btn', onclick: () => close() }, 'Cancel'),
+        h('button', { class: 'pill-btn primary', onclick: () => { if (!reply.value.trim()) { err.textContent = 'Paste the reply first.'; return; } settled = true; close(); resolve(reply.value); } }, 'Use this reply'))), true,
+      () => { if (!settled) { settled = true; const e = new Error('Cancelled.'); e.name = 'AbortError'; reject(e); } });
+  });
+}
+
+/* ── generation: instant match from the pre-generated gallery, then parallel Claude designs, cached by brief ── */
+const VARIANTS = ['Follow the brief closely.', 'Try a different layout type from the obvious one.', 'Keep it budget-conscious and compact.'];
+const hashStr = s => { let h = 2166136261; for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619); return (h >>> 0).toString(36); };
+function galleryMatch(b) {
+  const g = window.INTERIO_GALLERY || []; if (!g.length) return null;
+  const wantW = b.widthFt ? parseFloat(b.widthFt) * 30.48 : null, wantD = b.depthFt ? parseFloat(b.depthFt) * 30.48 : null;
+  const score = e => (b.layout !== 'any' && e.type !== b.layout ? 400 : 0) + (wantW ? Math.abs(e.w - wantW) : 0) + (wantD ? Math.abs(e.d - wantD) : 0) + (e.must && b.must.filter(m => !e.must.includes(m)).length * 40);
+  return g.slice().sort((x, y) => score(x) - score(y))[0];
+}
+function kdlToDoc(text, extra) {
+  const d = parseKDL(text), { spec, real } = realizeKDL(d);
+  const doc = docFromDesign(spec, real, extra); doc.ai.kdl = text.trim(); return doc;
+}
 async function generateProposals(b) {
   if (!aiReady()) return showAISettings(() => { renderBrief(); if (aiReady()) generateProposals(b); });
   if (AI.busy) return; AI.busy = true;
-  const st = $('#ai-brief-status'), pg = aiProgress(`Designing ${b.count} kitchen${b.count > 1 ? 's' : ''} with Claude`); st.innerHTML = ''; st.append(pg.el);
-  try {
-    const out = await aiCall('proposals', briefText(b), pg.update), designs = (out.designs || []).slice(0, 3);
-    if (!designs.length) throw new Error('Claude returned no designs. Try again or loosen the brief.');
-    const results = designs.map(dz => { const real = realizeDesign(dz); return docFromDesign(dz, real, { brief: b }); });
-    store.set('gen', { at: Date.now(), results }); st.innerHTML = ''; renderResults(); $('#ai-results').scrollIntoView({ behavior: 'smooth' });
-  } catch (e) { st.innerHTML = ''; st.append(h('div', { class: 'ai-error', role: 'alert' }, aiErrorText(e))); }
-  finally { AI.busy = false; AI.ctrl = null; }
+  const n = clamp(+b.count || 1, 1, 3), st = $('#ai-brief-status'), pg = aiProgress(`Designing ${n} kitchen${n > 1 ? 's' : ''} with Claude`); st.innerHTML = ''; st.append(pg.el);
+  const results = [], cache = store.get('kcache', {}), t0 = Date.now();
+  const publish = () => { store.set('gen', { at: Date.now(), results }); renderResults(); };
+  const m = galleryMatch(b);
+  if (m) { try { results.push(kdlToDoc(m.kdl, { brief: b, instant: true })); publish(); $('#ai-results').scrollIntoView({ behavior: 'smooth' }); } catch (e) { /* bad gallery entry */ } }
+  const jobs = VARIANTS.slice(0, n).map(async (variant, i) => {
+    const user = kdlBrief(b, n > 1 ? variant : ''), key = hashStr(AI.cfg.model + '|' + user);
+    let text = cache[key], cached = !!text;
+    if (!text) text = await aiText(kdlSystem(), user, i === 0 ? pg.update : null, { effort: 'low', maxTokens: 1500 });
+    const doc = kdlToDoc(text, { brief: b, secs: cached ? 0 : Math.round((Date.now() - t0) / 1000), cached });
+    if (!cached) { cache[key] = text; const keys = Object.keys(cache); if (keys.length > 40) delete cache[keys[0]]; store.set('kcache', cache); }
+    const at = results.findIndex(r => r.instant); if (at >= 0) results.splice(at, 1);
+    results.push(doc); publish();
+  });
+  const settled = await Promise.allSettled(jobs); AI.busy = false; st.innerHTML = '';
+  const fails = settled.filter(s => s.status === 'rejected').map(s => aiErrorText(s.reason));
+  if (fails.length) st.append(h('div', { class: 'ai-error', role: 'alert' }, fails.length === n ? fails[0] : `${n - fails.length} of ${n} designs arrived. ${fails[0]}`));
 }
 function renderResults() {
   const sec = $('#ai-results'), grid = $('#ai-results-grid'), gen = store.get('gen', null);
@@ -2191,62 +2445,361 @@ function renderResults() {
     const R = doc.room, issues = doc.ai.issues || [];
     grid.append(h('div', { class: 'gcard' },
       h('div', { class: 'thumb', html: planSVG(R, doc.items) }),
-      h('div', { class: 'meta' }, h('small', null, `${doc.ai.layout_type} · ${fmtHub(R)} · ${doc.items.length} units`), h('strong', null, doc.title), h('p', null, doc.ai.concept),
+      h('div', { class: 'meta' }, h('small', null, `${doc.ai.layout_type} · ${fmtHub(R)} · ${doc.items.length} units`, doc.instant ? h('span', { class: 'tag' }, 'instant match') : doc.cached ? h('span', { class: 'tag' }, 'cached') : doc.secs != null ? h('span', { class: 'tag ok' }, `${doc.secs} s`) : null),
+        h('strong', null, doc.title), h('p', null, doc.ai.concept),
         h('ul', { class: 'hl' }, (doc.ai.highlights || []).slice(0, 4).map(x => h('li', null, x))),
         h('div', { class: 'gfoot' }, h('span', { class: 'pprice', html: priceHTML(docPrice(doc)) }), issues.length ? h('span', { class: 'adj', title: issues.join('\n') }, `${issues.length} auto-adjustment${issues.length > 1 ? 's' : ''}`) : null),
         h('button', { class: 'pill-btn primary', onclick: () => openDoc(doc) }, 'Open in 3D ', h('span', { html: ico('arrow', 16) })))));
   });
 }
-function openDoc(doc) { const d = docs(), copy = JSON.parse(JSON.stringify(doc)); copy.id = uid(); copy.updated = Date.now(); d[copy.id] = copy; store.set('designs', d); location.hash = `#ai/${copy.id}`; }
+function renderGallery() {
+  const sec = $('#gallery'), grid = $('#gallery-grid'), g = window.INTERIO_GALLERY || []; if (!sec) return;
+  sec.hidden = !g.length; grid.innerHTML = '';
+  g.forEach(e => { try { const doc = kdlToDoc(e.kdl, { gallery: true }); grid.append(roomCard(doc.title, doc.room, 'ai', { items: doc.items, blurb: doc.ai.concept, small: `${doc.ai.layout_type} · ${fmtHub(doc.room)} · ${priceHTML(docPrice(doc)).replace(/<[^>]+>/g, '')}`, cta: 'Open in 3D', onclick: () => openDoc(doc) })); } catch (err) { /* skip a bad entry */ } });
+}
 
-/* ── planner: the AI tab (explain, ask for changes, undo) ── */
-const AI_QUICK = [['Fix every warning the planner shows.', 'Fix the warnings'], ['Bring the cost down by about 20% without losing the essentials.', 'Make it cheaper'], ['Add more storage, especially for bulk groceries and utensils.', 'More storage'], ['Try a completely different layout for this room.', 'Different layout'], ['Make the finishes lighter and brighter.', 'Lighter finishes']];
+
+/* ── planner AI tab: what the AI designed, regenerate, and how to steer it by typing ── */
 function renderAITab(sc) {
-  const ai = S.ai || {}, box = h('div', { class: 'psec aitab' });
-  sc.append(box);
-  if (S.ai) {
-    box.append(h('div', { class: 'ai-card' }, h('small', { class: 'muted' }, `AI design · ${ai.layout_type || ''}`), h('h3', null, S.title), ai.concept ? h('p', null, ai.concept) : null,
-      ai.highlights && ai.highlights.length ? h('ul', { class: 'hl' }, ai.highlights.map(x => h('li', null, x))) : null,
-      ai.notes && ai.notes.length ? h('details', null, h('summary', null, `Designer notes (${ai.notes.length})`), h('ul', null, ai.notes.map(x => h('li', null, x)))) : null));
-    if (ai.change) box.append(h('div', { class: 'ai-change' }, h('b', null, 'Last change: '), ai.change));
-    if (ai.issues && ai.issues.length) box.append(h('details', { class: 'ai-issues' }, h('summary', null, `${ai.issues.length} placement adjustment${ai.issues.length > 1 ? 's' : ''} made by the planner`), h('ul', null, ai.issues.map(x => h('li', null, x)))));
-  } else box.append(h('div', { class: 'ai-card' }, h('h3', null, 'Ask the AI designer'), h('p', null, 'Describe what you want and Claude will lay out the whole kitchen in this room — or change the design you have.')));
-  if (!aiReady()) { box.append(h('button', { class: 'cta', style: 'margin:12px 0;width:100%', onclick: () => showAISettings(() => renderPanel(true)) }, 'Connect Claude')); return; }
-  const ta = h('textarea', { class: 'field', rows: 3, placeholder: S.items.length ? 'e.g. move the fridge next to the door and add a tall pantry' : 'e.g. an L-shaped kitchen for heavy cooking, budget 3 lakh, sage green', 'aria-label': 'Ask the AI designer' });
-  const status = h('div');
-  const send = text => { if (text.trim()) aiEdit(text.trim(), status); };
-  box.append(h('div', { class: 'ai-ask' }, ta, h('div', { class: 'pills' }, AI_QUICK.map(([q, l]) => h('button', { class: 'pillf sm', onclick: () => send(q) }, l))),
-    h('div', { style: 'display:flex;gap:8px;align-items:center' }, h('button', { class: 'pill-btn primary', onclick: () => send(ta.value) }, S.items.length ? 'Ask for changes' : 'Design this kitchen'),
-      S.aiUndo && S.aiUndo.length ? h('button', { class: 'pill-btn', onclick: aiUndo }, 'Undo AI change') : null,
-      h('button', { class: 'pill-btn sm', style: 'margin-left:auto', onclick: () => showAISettings(() => renderPanel(true)) }, 'Settings'))), status);
+  const ai = S.ai || {}, box = h('div', { class: 'psec aitab' }); sc.append(box);
+  if (S.ai) box.append(h('div', { class: 'ai-card' }, h('small', { class: 'muted' }, `AI design · ${ai.layout_type || ''}`), h('h3', null, S.title), ai.concept ? h('p', null, ai.concept) : null,
+    ai.highlights && ai.highlights.length ? h('ul', { class: 'hl' }, ai.highlights.map(x => h('li', null, x))) : null,
+    ai.issues && ai.issues.length ? h('details', { class: 'ai-issues' }, h('summary', null, `${ai.issues.length} placement adjustment${ai.issues.length > 1 ? 's' : ''} by the planner`), h('ul', null, ai.issues.map(x => h('li', null, x)))) : null,
+    ai.kdl ? h('details', null, h('summary', null, 'Design source (KDL)'), h('pre', { class: 'cmd' }, ai.kdl)) : null));
+  else box.append(h('div', { class: 'ai-card' }, h('h3', null, 'Steer the design by typing'), h('p', null, 'Use the command bar at the bottom of the 3D view. Precise commands run instantly; anything else is interpreted by Claude.')));
+  box.append(h('div', { class: 'ai-card' }, h('b', null, 'Try typing'), h('ul', { class: 'hl' }, ['move the window 50 cm left', 'move the east wall out 30 cm', 'room 12x10 ft', 'lower the window 10 cm', 'make the hob 90 with 5 burners', 'add a tall pantry on the east wall', 'countertop marble, tiles moroccan dado', 'undo'].map(x => h('li', null, h('button', { class: 'linkish', onclick: () => { $('#tb-input').value = x; $('#tb-input').focus(); } }, x))))));
+  box.append(h('div', { style: 'display:flex;gap:8px;flex-wrap:wrap' },
+    aiReady() ? h('button', { class: 'pill-btn primary', onclick: () => tbDesign('A fresh design for this room in the same spirit.') }, S.items.length ? 'Design this room again' : 'Design this room with AI') : h('button', { class: 'pill-btn primary', onclick: () => showAISettings(() => renderPanel(true)) }, 'Connect Claude'),
+    h('button', { class: 'pill-btn', onclick: () => showAISettings(() => renderPanel(true)) }, 'AI settings')));
 }
-async function aiEdit(request, status) {
-  if (AI.busy) return; AI.busy = true;
-  const pg = aiProgress('Claude is reworking the design'); status.innerHTML = ''; status.append(pg.el);
-  const spec = currentSpec(), bad = warnCache.map(w => w.text);
-  const text = `Current kitchen design (same schema as your output; it includes the user's manual edits):\n${JSON.stringify(spec)}\n\n` +
-    (bad.length ? `Planner checks currently failing:\n- ${bad.join('\n- ')}\n\n` : 'All planner checks currently pass.\n\n') +
-    (S.ai && S.ai.issues && S.ai.issues.length ? `Adjustments the planner had to make last time:\n- ${S.ai.issues.join('\n- ')}\n\n` : '') +
-    `User request: ${request}\n\nReturn the complete revised design in "design" (keep whatever the user didn't ask to change, including room size and openings unless asked) and summarise what you changed in "change_summary".`;
+
+/* ═══════════════ 14 · Textbot — type to control the planner ═══════════════
+   Three tiers: (1) a deterministic grammar turns precise text into canonical commands instantly; (2) anything else goes to
+   Claude with a tiny prompt (the command grammar + a scene summary) and must come back as canonical commands or NONE;
+   (3) one executor runs the commands, with undo. Outside its vocabulary it answers "Doesn't look like anything to me." */
+const TB = { log: [], undo: [], redo: [], busy: false };
+const WALL_WORD = { north: 'N', south: 'S', east: 'E', west: 'W', back: 'N', front: 'S', right: 'E', left: 'W' };
+const ROLE_WORDS = [[/fridge|refrigerator/, 'fridge'], [/\bsink/, 'sink-unit'], [/\bhob|stove|cooktop|burner/, 'stove'], [/chimney|hood|exhaust/, 'chimney'], [/microwave/, 'microwave'], [/\botg\b|toaster|oven toaster/, 'otg'],
+  [/mixer|grinder/, 'mixer'], [/purifier|\bro\b|water filter/, 'ro'], [/dishwasher/, 'dishwasher'], [/pantry|tall unit|tall cabinet|oven tower|\btall\b|broom unit/, 'tall'], [/\bloft/, 'loft'], [/shelf/, 'shelf'], [/stool/, 'stool'],
+  [/wall cabinet|wall unit|upper cabinet/, 'wall-cab'], [/base cabinet|base unit|drawer unit|cabinet/, 'base-cab'], [/island/, 'island']];
+const COLOR_WORDS = { white: 0, frosty: 0, ivory: 1, cream: 1, sage: 2, green: 2, navy: 3, blue: 3, graphite: 4, grey: 4, gray: 4, black: 4, terracotta: 5, orange: 5, walnut: 6, brown: 6, oak: 7, wood: 7 };
+const PAINT_WORDS = { white: 0, beige: 1, cream: 2, orange: 3, terracotta: 3, rust: 4, red: 4, 'light blue': 5, 'sky': 5, blue: 6, slate: 6, sage: 7, green: 7, grey: 8, gray: 8, taupe: 9, mauve: 10, purple: 10, teal: 11 };
+
+/* ── helpers: quantities, references, directions ── */
+function tbQty(s, bareUnit = 'cm') {
+  const m = s.match(/(-?\d+(?:\.\d+)?)\s*(cm|centimet\w*|mm|m\b|met(?:er|re)s?|ft|feet|foot|'|in\b|inch(?:es)?|")?/i); if (!m) return null;
+  const v = parseFloat(m[1]), u = (m[2] || bareUnit).toLowerCase();
+  return /^mm/.test(u) ? v / 10 : /^(m|met)/.test(u) ? v * 100 : /^(ft|feet|foot|')/.test(u) ? v * 30.48 : /^(in|inch|")/.test(u) ? v * 2.54 : v;
+}
+const tbWall = s => { const m = s.match(/\b(north|south|east|west|back|front|left|right)\b\s*(?:wall|side)/) || s.match(/\b(north|south|east|west)\b/); return m ? WALL_WORD[m[1]] : (s.match(/\b([nesw])\s*wall\b/) || [])[1]?.toUpperCase() || null; };
+const tbOrdinal = s => { const m = s.match(/#\s*(\d+)|\b(\d+)(?:st|nd|rd|th)\b|\b(first|second|third|fourth)\b|\b(?:window|door|cabinet|unit|stool)\s+(\d)\b(?!\s*(?:cm|mm|m\b|met|ft|feet|foot|in\b|inch|"|'|%))/); if (!m) return null; return +(m[1] || m[2] || m[4]) || ({ first: 1, second: 2, third: 3, fourth: 4 }[m[3]]); };
+function tbFeat(s, kind) {
+  const list = S.room.feats.filter(f => !kind || f.kind === kind), w = tbWall(s), n = tbOrdinal(s);
+  const cand = w ? list.filter(f => f.wall === w) : list;
+  if (n) return list[n - 1] || null; if (cand.length === 1) return cand[0]; if (!cand.length) return null;
+  throw new Error(`There are ${cand.length} ${kind}s — say which (e.g. "${kind} on the ${WALL_NAME[cand[0].wall].toLowerCase()}" or "${kind} 2").`);
+}
+const roleOf = it => { const p = P(it.pid); return p.essential === 'stove' ? 'stove' : p.id; };
+function tbUnits(s) { for (const [re, role] of ROLE_WORDS) if (re.test(s)) { if (role === 'island') return { role, list: S.items.filter(i => !i.wall && P(i.pid).counter) }; return { role, list: S.items.filter(i => roleOf(i) === role || (role === 'base-cab' && i.pid === 'base-cab')) }; } return null; }
+function tbUnit(s) {
+  if (/\b(it|this|that|selected)\b/.test(s) && S.sel) return S.sel;
+  const u = tbUnits(s); if (!u) return null; let list = u.list; const w = tbWall(s), n = tbOrdinal(s);
+  if (w) list = list.filter(i => i.wall === w); if (n) return list[n - 1] || null; if (list.length === 1) return list[0];
+  if (!list.length) throw new Error(`There's no ${u.role.replace('-', ' ')}${w ? ' on the ' + WALL_NAME[w].toLowerCase() : ''}.`);
+  if (S.sel && list.includes(S.sel)) return S.sel;
+  return list[0];
+}
+/* +1 = along the wall from its start (N/S: west→east, W/E: north→south); left/right as seen facing that wall from inside */
+function tbAlong(wall, s) {
+  if (/\b(down|along) the wall\b/.test(s)) return 1; if (/\bup the wall\b/.test(s)) return -1;
+  if (/\bright\b/.test(s)) return { N: 1, S: -1, E: 1, W: -1 }[wall]; if (/\bleft\b/.test(s)) return { N: -1, S: 1, E: -1, W: 1 }[wall];
+  if (/\beast/.test(s)) return 1; if (/\bwest/.test(s)) return -1; if (/\bsouth/.test(s)) return 1; if (/\bnorth/.test(s)) return -1;
+  return null;
+}
+const refOf = (x, kind) => kind ? `${kind}#${S.room.feats.filter(f => f.kind === kind).indexOf(x) + 1}` : `${roleOf(x)}#${S.items.filter(i => roleOf(i) === roleOf(x)).indexOf(x) + 1}`;
+
+/* ── tier 1: natural text → canonical commands (or null) ── */
+/* precise-but-human typing: fix the handful of words the grammar depends on (one edit away), e.g. "rihgt" → "right" */
+const TB_WORDS = ['right', 'left', 'north', 'south', 'east', 'west', 'window', 'door', 'wall', 'move', 'room', 'size', 'increase', 'decrease', 'lower', 'raise', 'width', 'depth', 'ceiling', 'fridge', 'sink', 'counter', 'countertop', 'remove', 'bigger', 'smaller'];
+const TB_REAL = new Set('with light night eight might sight tight fight bright best rest test nest vest last vast past cast easy tall ball call fall hall mall well will more mode love side site wide lift power tower lover broom roof zoom boom look poor link pink wink sing silk bridge mouth youth sizes sized moved wells walls rooms doors windows sinks lowered raised widths ceilings counters fridges right. left. move. what were wear went want ward word walk wait doom deer dear heat seat neat east. west.'.split(' '));
+function tbFix(w) {
+  if (w.length < 4 || TB_WORDS.includes(w) || TB_REAL.has(w)) return w;
+  const near = (a, b) => { if (Math.abs(a.length - b.length) > 1) return false; if (a.length === b.length) { const d = [...a].map((c, i) => c !== b[i] ? i : -1).filter(i => i >= 0); return d.length === 1 || (d.length === 2 && d[1] === d[0] + 1 && a[d[0]] === b[d[1]] && a[d[1]] === b[d[0]]); }
+    const [l, sh] = a.length > b.length ? [a, b] : [b, a]; for (let i = 0; i < l.length; i++) if (l.slice(0, i) + l.slice(i + 1) === sh) return true; return false; };
+  return TB_WORDS.find(t => near(w, t)) || w;
+}
+function tbParse(raw) {
+  const s = ' ' + raw.toLowerCase().replace(/[“”]/g, '"').replace(/\s+/g, ' ').trim().replace(/[a-z]+/g, tbFix) + ' ';
+  if (/^\s*(undo|go back|revert)\b/.test(s)) return ['UNDO']; if (/^\s*redo\b/.test(s)) return ['REDO'];
+  if (/\b(how much|price|cost|total)\b/.test(s)) return ['ASK price']; if (/\b(warnings?|problems?|checks?|issues?)\b/.test(s) && /\b(any|what|show|list|check)\b/.test(s)) return ['ASK checks'];
+  if (/\bhow (big|large)|room size\?|dimensions\?/.test(s)) return ['ASK size'];
+  if (/\b(top|plan) view\b|\bfrom above\b/.test(s)) return ['VIEW top']; if (/\bdoll ?house|3d view\b/.test(s)) return ['VIEW dollhouse'];
+  if (/\b(look at|view|face|inside)\b.*\bwall\b/.test(s) && tbWall(s)) return ['VIEW inside ' + tbWall(s)];
+  if (/\bzoom in\b/.test(s)) return ['ZOOM in']; if (/\bzoom out\b/.test(s)) return ['ZOOM out'];
+  if (/\b(show|hide|turn (on|off))\b.*\b(measure|dimension)/.test(s)) return [`MEASURE ${/\b(hide|off)\b/.test(s) ? 'off' : 'on'}`];
+  if (/\b(design|generate|redesign|start over|new layout|make me)\b/.test(s) && /\b(kitchen|layout|design|it)\b/.test(s)) return ['DESIGN ' + raw.trim()];
+  // style
+  const styleHit = (re, key, table) => { if (!re.test(s)) return null; for (const [id, words] of table) if (words.some(w => s.includes(w))) return `STYLE ${key} ${id}`; return null; };
+  const st = styleHit(/\b(counter|countertop|worktop|top)\b/, 'counter', [['marble', ['marble', 'statuario']], ['quartz-grey', ['grey quartz', 'gray quartz', 'concrete']], ['quartz-white', ['quartz', 'white']], ['granite-tan', ['tan', 'brown granite']], ['granite-black', ['granite', 'black']], ['oak', ['oak', 'wood']], ['steel', ['steel', 'metal']]])
+    || styleHit(/\bhandle/, 'handles', [['gola', ['gola', 'handleless', 'handle-less', 'no handle']], ['knob', ['knob']], ['edge', ['brass', 'edge']], ['bar', ['bar']]])
+    || (/\b(tile|tiles|backsplash|splash|dado)\b/.test(s) ? (() => {
+      const out = []; const t = TILES.find(t => t.n.toLowerCase().split(' ').some(w => w.length > 3 && s.includes(' ' + w)) || s.includes(t.id)); if (t) out.push('STYLE tile ' + t.id);
+      if (/\bno tiles?\b/.test(s)) out.push('STYLE cover none'); else if (/\bdado\b/.test(s)) out.push('STYLE cover dado'); else if (/\bfull|floor to ceiling\b/.test(s)) out.push('STYLE cover full'); else if (/\bbacksplash|splash\b/.test(s) && !t) out.push('STYLE cover splash');
+      return out.length ? out.join('\n') : null; })() : null)
+    || (/\bfloor(ing)?\b/.test(s) ? (() => { const f = FLOORS.find(f => f.name.toLowerCase().split(/[ -]/).some(w => w.length > 3 && s.includes(w))); return f ? 'STYLE floor ' + f.id : null; })() : null)
+    || (/\b(paint|wall colou?r)\b|\bwalls? (in|to)\b/.test(s) && !/\b(move|push|pull)\b/.test(s) ? (() => { const k = Object.keys(PAINT_WORDS).find(w => s.includes(w)); return k != null ? 'STYLE paint ' + PAINT_WORDS[k] : null; })() : null)
+    || (/\b(finish|shutters?|cabinets?|kitchen)\b/.test(s) && /\b(make|change|paint|switch|use|in)\b/.test(s) && !tbUnits(s.replace(/cabinets?|kitchen/g, '')) ? (() => { const k = Object.keys(COLOR_WORDS).find(w => new RegExp('\\b' + w + '\\b').test(s)); return k != null ? 'STYLE finish ' + COLOR_WORDS[k] : null; })() : null);
+  if (st) return st.split('\n');
+  // room size / ceiling / walls
+  if (/\bceiling\b/.test(s)) { const q = tbQty(s, 'cm'); if (q == null) return null; return [/\b(raise|higher|up|increase|taller)\b/.test(s) && !/\bto\b/.test(s) ? `ROOM ceiling +${q}` : /\b(lower|down|decrease)\b/.test(s) && !/\bto\b/.test(s) ? `ROOM ceiling -${q}` : `ROOM ceiling ${q > 10 ? q : q * 100}`]; }
+  if (/\b(room|kitchen)\b/.test(s) && /(\d+(?:\.\d+)?)\s*(?:x|by|×)\s*(\d+(?:\.\d+)?)\s*(ft|feet|foot|m|cm|')?/.test(s)) { const m = s.match(/(\d+(?:\.\d+)?)\s*(?:x|by|×)\s*(\d+(?:\.\d+)?)\s*(ft|feet|foot|m|cm|')?/); const u = m[3] || (+m[1] <= 12 ? 'm' : 'cm'); return [`ROOM size ${Math.round(tbQty(m[1] + u))} ${Math.round(tbQty(m[2] + u))}`]; }
+  if (/\b(room|kitchen)\b/.test(s) && /\b(bigger|larger|increase|grow|expand|smaller|shrink|decrease|reduce|wider|narrower|deeper|shallower|longer|shorter)\b/.test(s)) {
+    const q = tbQty(s) ?? 30, neg = /\b(smaller|shrink|decrease|reduce|narrower|shallower|shorter)\b/.test(s) ? -1 : 1;
+    if (/\b(wider|narrower|width)\b/.test(s)) return [`ROOM width ${neg > 0 ? '+' : '-'}${q}`]; if (/\b(deeper|shallower|depth|longer|shorter)\b/.test(s)) return [`ROOM depth ${neg > 0 ? '+' : '-'}${q}`];
+    return [`ROOM width ${neg > 0 ? '+' : '-'}${q}`, `ROOM depth ${neg > 0 ? '+' : '-'}${q}`];
+  }
+  if (/\b(room|kitchen)?\s*(width|depth)\b/.test(s) && /\d/.test(s) && !/\b(window|door)\b/.test(s)) { const q = tbQty(s, 'cm'); return [`ROOM ${/width/.test(s) ? 'width' : 'depth'} ${/\bby\b/.test(s) || /[+-]\s*\d/.test(s) ? (/-\s*\d|\b(reduce|decrease|less)\b/.test(s) ? '-' : '+') : ''}${Math.abs(q)}`]; }
+  if (/\bwall\b/.test(s) && /\b(move|push|pull|shift|slide|extend)\b/.test(s) && !/\b(window|door|cabinet|unit)\b/.test(s)) {
+    let w = tbWall(s); const q = tbQty(s) ?? 30;
+    const dir = /\bright\b/.test(s) ? 'E' : /\bleft\b/.test(s) ? 'W' : /\b(back|north|up)\b/.test(s) ? 'N' : /\b(forward|south|down)\b/.test(s) ? 'S' : null;
+    if (!w) w = dir; if (!w) return null;
+    const out = { N: 'N', S: 'S', E: 'E', W: 'W' }[w], outward = dir ? (dir === out) : !/\b(in|inward|pull)\b/.test(s);
+    return [`WALL ${w} ${outward ? '+' : '-'}${q}`];
+  }
+  // openings
+  for (const kind of ['window', 'door']) {
+    if (!new RegExp('\\b' + kind + 's?\\b').test(s)) continue;
+    if (/\b(add|new|another|put a|insert)\b/.test(s)) { const w = tbWall(s); if (!w) return null; const q = tbQty(s.replace(/\b\d+(st|nd|rd|th)\b/, '')); return [`OPEN add ${kind} ${w} ${q != null ? Math.round(q) : 'mid'}${/\bdouble\b/.test(s) ? ' double' : ''}`]; }
+    const f = tbFeat(s, kind); if (!f) return null; const ref = refOf(f, kind);
+    if (/\b(remove|delete|close up|get rid)\b/.test(s)) return [`OPEN ${ref} remove`];
+    if (/\b(wider|narrower|width|bigger|smaller)\b/.test(s)) { const q = tbQty(s) ?? 20; return [/\bwidth\b/.test(s) && /\bto\b|\d+\s*(cm|m)\s*wide/.test(s) ? `OPEN ${ref} width ${q}` : `OPEN ${ref} width ${/\b(narrower|smaller)\b/.test(s) ? '-' : '+'}${q}`]; }
+    const toWall = s.match(/\b(?:to|onto|on) (?:the )?(north|south|east|west|back|front|left|right) (?:wall|side)/);
+    if (toWall && /\b(move|put|place|shift)\b/.test(s)) { const q = s.match(/\bat (-?\d+(?:\.\d+)?\s*\w*)/); return [`OPEN ${ref} to ${WALL_WORD[toWall[1]]} ${q ? Math.round(tbQty(q[1])) : 'mid'}`]; }
+    if (kind === 'window' && /\b(lower|raise|higher|up|down)\b/.test(s) && !/\b(the wall|along)\b/.test(s)) { const q = tbQty(s) ?? 10; return [`OPEN ${ref} sill ${/\b(lower|down)\b/.test(s) ? '-' : '+'}${q}`]; }
+    if (/\b(move|shift|slide|push|nudge|put)\b/.test(s)) { const sg = tbAlong(f.wall, s); if (sg == null) return null; const q = tbQty(s) ?? 30; return [`OPEN ${ref} shift ${sg > 0 ? '+' : '-'}${q}`]; }
+    return null;
+  }
+  // units
+  if (/\b(add|put|place|insert|include|need|want)\b/.test(s) && tbUnits(s)) {
+    const u = tbUnits(s); const pid = { stove: 'hob-unit', island: null }[u.role] ?? u.role; if (!pid || !P(pid)) return null;
+    const w = tbWall(s), opts = [];
+    if (pid === 'tall') opts.push(/\boven\b/.test(s) ? 'cfg=oven' : /\bbroom\b/.test(s) ? 'cfg=broom' : 'cfg=pantry');
+    const wq = s.match(/\b(30|45|60|75|90|120)\s*(cm)?\b/); if (wq && P(pid).opts.some(o => o.key === 'w')) opts.push('w=' + wq[1]);
+    const n = Math.min(6, +(s.match(/\b(\d)\s+stools?\b/) || [])[1] || 1);
+    return Array.from({ length: n }, () => `UNIT add ${pid}${w ? ' ' + w : ''}${opts.length ? ' ' + opts.join(' ') : ''}`);
+  }
+  const it = (() => { try { return tbUnit(s); } catch (e) { if (/\b(move|remove|delete|make|rotate|turn|set|change|swap|shift)\b/.test(s)) throw e; return null; } })();
+  if (it) {
+    const ref = refOf(it), p = P(it.pid);
+    if (/\b(remove|delete|get rid|take out|drop)\b/.test(s)) return [`UNIT ${ref} remove`];
+    if (/\b(rotate|turn)\b/.test(s)) { const q = tbQty(s, 'deg'); return [`UNIT ${ref} rotate ${/\b(around|180)\b/.test(s) ? 180 : q != null ? q : 90}`]; }
+    const toWall = s.match(/\b(?:to|onto|on|against) (?:the )?(north|south|east|west|back|front|left|right) (?:wall|side)/);
+    if (toWall) return [`UNIT ${ref} to ${WALL_WORD[toWall[1]]}`];
+    if (/\b(move|shift|slide|push|nudge)\b/.test(s)) {
+      const q = tbQty(s) ?? 30;
+      if (it.wall) { const sg = tbAlong(it.wall, s); if (sg == null) return null; return [`UNIT ${ref} shift ${sg > 0 ? '+' : '-'}${q}`]; }
+      const dx = /\bright|east\b/.test(s) ? q : /\bleft|west\b/.test(s) ? -q : 0, dz = /\b(down|forward|south|toward me)\b/.test(s) ? q : /\b(up|back|north|away)\b/.test(s) ? -q : 0;
+      if (!dx && !dz) return null; return [`UNIT ${ref} move ${Math.round(dx)} ${Math.round(dz)}`];
+    }
+    const out = [];
+    const wq = s.match(/\b(30|45|60|75|90|120)\s*(cm)?\b/); if (wq && p.opts.some(o => o.key === 'w')) out.push(`UNIT ${ref} set w ${wq[1]}`);
+    const bq = s.match(/\b([2-5])[ -]?burners?\b/); if (bq && p.opts.some(o => o.key === 'burners')) out.push(`UNIT ${ref} set burners ${bq[1]}`);
+    for (const o of p.opts) for (const [v, lab] of o.values) { if (o.key === 'w' || o.key === 'burners') continue; const words = lab.toLowerCase().split(/[ ,+]+/).filter(x => x.length > 3); if (typeof v === 'string' && (s.includes(' ' + v + ' ') || (words.length && words.every(x => s.includes(x))))) out.push(`UNIT ${ref} set ${o.key} ${v}`); }
+    const vi = p.variants.findIndex(v => v.n.toLowerCase().split(/[ -]/).some(w => w.length > 3 && new RegExp('\\b' + w + '\\b').test(s)));
+    if (vi >= 0 && /\b(make|colour|color|finish|in|change)\b/.test(s)) out.push(`UNIT ${ref} finish ${vi}`);
+    if (out.length) return [...new Set(out)];
+  }
+  return null;
+}
+
+/* ── tier 2: Claude translates anything else into canonical commands ── */
+function tbSystem() {
+  return `You translate a homeowner's message into commands for a kitchen planner. Output ONLY command lines, one per line. If the message is not about changing or viewing this kitchen, or cannot be expressed with these commands, output: NONE <short reason>.
+
+Commands (cm; walls N E S W; positions along a wall are measured from its start: N/S from the west end, W/E from the north end):
+ROOM width <cm|+cm|-cm> · ROOM depth <...> · ROOM ceiling <...> · ROOM size <width> <depth>
+WALL <N|E|S|W> <+cm outward|-cm inward>
+OPEN <ref> shift <±cm along the wall> · OPEN <ref> to <wall> <cm|mid> · OPEN <ref> sill <±cm> · OPEN <ref> width <cm|±cm> · OPEN <ref> remove
+OPEN add <window|door> <wall> <cm|mid> [double]
+UNIT <ref> shift <±cm along its wall> · UNIT <ref> move <dx cm east> <dz cm south> · UNIT <ref> to <wall> [<cm>] · UNIT <ref> rotate <deg> · UNIT <ref> remove
+UNIT <ref> set <option> <value> · UNIT <ref> finish <index>
+UNIT add <product> [<wall>] [w=<cm>] [<option>=<value>]
+STYLE counter|handles|tile|cover|floor <id> · STYLE finish <0-7> · STYLE paint <0-11>
+VIEW top|dollhouse|inside <wall> · ZOOM in|out · MEASURE on|off · UNDO · REDO · ASK price|size|checks
+DESIGN <brief>   (only when the user asks for a whole new kitchen)
+
+Products: ${PRODUCTS.map(p => p.id).join(' ')}. Options: ${PRODUCTS.filter(p => p.opts.length).map(p => `${p.id}(${p.opts.map(o => o.key + ':' + o.values.map(v => v[0]).join('/')).join(' ')})`).join(' ')}.
+Style ids — counter: ${COUNTERS.map(c => c.id).join(' ')}; handles: ${HANDLES.map(h => h[0]).join(' ')}; tile: ${TILES.map(t => t.id).join(' ')}; cover: ${TILE_COVER.map(t => t[0]).join(' ')}; floor: ${FLOORS.map(f => f.id + '=' + f.name.toLowerCase()).join(', ')}; finish: ${FINISHES.map((f, i) => i + '=' + f.n.toLowerCase()).join(', ')}.
+"left/right" of something on a wall = as seen facing that wall from inside the room (N wall: right = +; S: right = −; E: right = +; W: right = −).`;
+}
+function tbScene() {
+  const R = S.room, W = Math.round((R.x1 - R.x0) * 100), D = Math.round((R.z1 - R.z0) * 100);
+  const feats = R.feats.map(f => `${refOf(f, f.kind)} ${f.wall} centre ${Math.round(f.u * 100)} width ${Math.round(f.w * 100)}${f.kind === 'window' ? ' sill ' + Math.round((f.sill || 0) * 100) : ''}`).join('; ');
+  const units = S.items.map(it => { const sh = shapeOf(it); if (it.wall) { const ax = alongAxis(it.wall), b = ax === 'x' ? R.x0 : R.z0, [a0, a1] = alongOf(sh, ax); return `${refOf(it)} ${it.wall} ${Math.round((a0 - b) * 100)}-${Math.round((a1 - b) * 100)}`; } return `${refOf(it)} free at ${Math.round((it.x - R.x0) * 100)},${Math.round((it.z - R.z0) * 100)}`; }).join('; ');
+  return `Room ${W}×${D}, ceiling ${Math.round(R.h * 100)}. Openings: ${feats || 'none'}. Units: ${units || 'none'}.${S.sel ? ' Selected: ' + refOf(S.sel) + '.' : ''}`;
+}
+
+/* ── tier 3: execute canonical commands ── */
+function tbRef(ref) {
+  const m = String(ref).match(/^([a-z-]+)#(\d+)$/); if (!m) throw new Error(`Unknown reference "${ref}".`);
+  if (m[1] === 'window' || m[1] === 'door') { const f = S.room.feats.filter(f => f.kind === m[1])[+m[2] - 1]; if (!f) throw new Error(`There's no ${m[1]} ${m[2]}.`); return { feat: f }; }
+  const it = S.items.filter(i => roleOf(i) === m[1])[+m[2] - 1]; if (!it) throw new Error(`There's no ${m[1].replace('-', ' ')} ${m[2]}.`); return { item: it };
+}
+const rel = (cur, v) => /^[+-]/.test(v) ? cur + parseFloat(v) : parseFloat(v);
+const nm = it => P(it.pid).name.toLowerCase();
+function tbFeatFits(f, L) { if (f.u - f.w / 2 < .05 || f.u + f.w / 2 > L - .05) throw new Error(`That would push the ${f.kind} past the end of the wall.`); if (S.room.feats.some(g => g !== f && g.wall === f.wall && Math.abs(g.u - f.u) < (g.w + f.w) / 2 + .02)) throw new Error(`That would overlap another opening on the ${WALL_NAME[f.wall].toLowerCase()}.`); }
+function tbExec(cmd) {
+  const t = cmd.trim().split(/\s+/), op = (t[0] || '').toUpperCase(), R = S.room;
+  if (op === 'NONE') { const e = new Error(t.slice(1).join(' ')); e.none = true; throw e; }
+  if (op === 'ASK') { if (t[1] === 'price') return `The kitchen comes to ${priceHTML(totalPrice()).replace(/<[^>]+>/g, '')} for ${S.items.length} units.`; if (t[1] === 'size') return `The room is ${fmtLen(R.x1 - R.x0)} × ${fmtLen(R.z1 - R.z0)}, ceiling ${fmtLen(R.h)}.`; return warnCache.length ? 'Needs attention: ' + warnCache.map(w => w.text).join(' ') : 'All kitchen checks pass.'; }
+  if (op === 'VIEW') { if (t[1] === 'inside') { S.insideWall = WALLS.includes(t[2]) ? t[2] : 'N'; CAM.yaw = 0; CAM.pitch = 0; setView('inside'); } else setView(t[1] === 'top' ? 'top' : 'dollhouse'); return `Switched to ${t[1] === 'inside' ? 'looking at the ' + WALL_NAME[S.insideWall].toLowerCase() : t[1] + ' view'}.`; }
+  if (op === 'ZOOM') { zoomBy(t[1] === 'out' ? -1 : 1); zoomBy(t[1] === 'out' ? -1 : 1); return `Zoomed ${t[1]}.`; }
+  if (op === 'MEASURE') { const on = t[1] !== 'off'; S.measure.room = S.measure.prod = on; positionOverlay(); markDirty(); return `Measurements ${on ? 'on' : 'off'}.`; }
+  if (op === 'STYLE') {
+    const k = t[1], v = t[2], stl = Object.assign(styleOf(), {});
+    if (k === 'finish') { const i = clamp(parseInt(v, 10), 0, FINISHES.length - 1); R.fin = i; S.items.forEach(it => { if (P(it.pid).variants[0].fin) it.v = i; }); TH.cache.clear(); restyle(); return `Cabinet finish → ${FINISHES[i].n}.`; }
+    if (k === 'paint') { const i = clamp(parseInt(v, 10), 0, WALL_COLORS.length - 1); R.wall = WALL_COLORS[i]; restyle(); return 'Wall paint changed.'; }
+    if (k === 'floor') { const f = FLOORS.find(f => f.id === v); if (!f) throw new Error(`Unknown floor "${v}".`); R.floor = f.id; restyle(); return `Floor → ${f.name}.`; }
+    const map = { counter: ['counter', COUNTERS.map(c => c.id), id => COUNTER(id).n], handles: ['handle', HANDLES.map(h => h[0]), id => HANDLES.find(h => h[0] === id)[1]], tile: ['tile', TILES.map(t => t.id), id => TILE(id).n], cover: ['tileCover', TILE_COVER.map(t => t[0]), id => TILE_COVER.find(t => t[0] === id)[1]] }[k];
+    if (!map || !map[1].includes(v)) throw new Error(`Unknown ${k} "${v}".`);
+    stl[map[0]] = v; R.style = stl; TH.cache.clear(); restyle(); return `${k[0].toUpperCase() + k.slice(1)} → ${map[2](v)}.`;
+  }
+  if (op === 'ROOM' || op === 'WALL') {
+    const W0 = R.x1 - R.x0, D0 = R.z1 - R.z0; let dW = 0, dD = 0, side = { W: 'E', D: 'S' };
+    if (op === 'ROOM') {
+      if (t[1] === 'ceiling') { R.h = clamp(rel(R.h * 100, t[2]) / 100, 2.3, 3.8); buildRoom(); return `Ceiling → ${fmtLen(R.h)}.`; }
+      if (t[1] === 'size') { dW = clamp(+t[2] / 100, 1.8, 12) - W0; dD = clamp(+t[3] / 100, 1.5, 12) - D0; }
+      else if (t[1] === 'width') dW = clamp(rel(W0 * 100, t[2]) / 100, 1.8, 12) - W0; else if (t[1] === 'depth') dD = clamp(rel(D0 * 100, t[2]) / 100, 1.5, 12) - D0; else throw new Error('Unknown room command.');
+    } else {
+      const w = t[1], d = parseFloat(t[2]) / 100; if (!WALLS.includes(w) || !isFinite(d)) throw new Error('Unknown wall command.');
+      if (w === 'E' || w === 'W') { dW = clamp(W0 + d, 1.8, 12) - W0; side.W = w; } else { dD = clamp(D0 + d, 1.5, 12) - D0; side.D = w; }
+    }
+    if (side.W === 'W') { R.x0 -= dW; R.feats.forEach(f => { if (f.wall === 'N' || f.wall === 'S') f.u += dW; }); } else R.x1 += dW;
+    if (side.D === 'N') { R.z0 -= dD; R.feats.forEach(f => { if (f.wall === 'W' || f.wall === 'E') f.u += dD; }); } else R.z1 += dD;
+    R.feats.forEach(f => { const L = wallLen(f.wall); f.u = clamp(f.u, f.w / 2 + .05, L - f.w / 2 - .05); });
+    reflowItems(); buildRoom(); fitCamera(); updateCamera();
+    return `Room is now ${fmtLen(R.x1 - R.x0)} × ${fmtLen(R.z1 - R.z0)}${op === 'WALL' ? ` (moved the ${WALL_NAME[t[1]].toLowerCase()} ${Math.abs(parseFloat(t[2]))} cm ${parseFloat(t[2]) > 0 ? 'out' : 'in'})` : ''}.`;
+  }
+  if (op === 'OPEN') {
+    if (t[1] === 'add') {
+      const kind = t[2], wall = t[3]; if (!['window', 'door'].includes(kind) || !WALLS.includes(wall)) throw new Error('Say which wall the new opening goes on.');
+      const f = feat(wall, kind === 'door' ? 'single' : (t.includes('double') ? 'w2' : 'w1'), 0), L = wallLen(wall); f.u = t[4] && t[4] !== 'mid' ? +t[4] / 100 : L / 2; tbFeatFits(f, L);
+      R.feats.push(f); buildRoom(); return `Added a ${kind} on the ${WALL_NAME[wall].toLowerCase()}, centred ${Math.round(f.u * 100)} cm from its start.`;
+    }
+    const { feat: f } = tbRef(t[1]); if (!f) throw new Error('That is not a door or window.'); const L = wallLen(f.wall), before = JSON.stringify(f);
+    try {
+      if (t[2] === 'remove') { if (f.kind === 'door' && R.feats.filter(g => g.kind === 'door').length < 2) throw new Error('A kitchen needs at least one door.'); R.feats.splice(R.feats.indexOf(f), 1); buildRoom(); return `Removed the ${f.kind} on the ${WALL_NAME[f.wall].toLowerCase()}.`; }
+      if (t[2] === 'shift') { f.u += parseFloat(t[3]) / 100; tbFeatFits(f, L); buildRoom(); return `Moved the ${f.kind} ${Math.abs(parseFloat(t[3]))} cm along the ${WALL_NAME[f.wall].toLowerCase()} — centre now ${Math.round(f.u * 100)} cm from its start.`; }
+      if (t[2] === 'to') { if (!WALLS.includes(t[3])) throw new Error('Unknown wall.'); f.wall = t[3]; const L2 = wallLen(f.wall); f.u = t[4] && t[4] !== 'mid' ? +t[4] / 100 : L2 / 2; tbFeatFits(f, L2); buildRoom(); return `Moved the ${f.kind} to the ${WALL_NAME[f.wall].toLowerCase()}.`; }
+      if (t[2] === 'sill') { if (f.kind !== 'window') throw new Error('Only windows have a sill.'); f.sill = clamp((f.sill * 100 + parseFloat(t[3])) / 100, .3, R.h - f.h - .1); buildRoom(); return `Window sill now ${Math.round(f.sill * 100)} cm above the floor.`; }
+      if (t[2] === 'width') { f.w = clamp(rel(f.w * 100, t[3]) / 100, .5, Math.min(3, L - .2)); tbFeatFits(f, L); buildRoom(); return `The ${f.kind} is now ${Math.round(f.w * 100)} cm wide.`; }
+    } catch (e) { Object.assign(f, JSON.parse(before)); buildRoom(); throw e; }
+    throw new Error('Unknown opening command.');
+  }
+  if (op === 'UNIT') {
+    if (t[1] === 'add') {
+      const pid = t[2]; if (!P(pid)) throw new Error(`Unknown product "${pid}".`);
+      const cfg = {}; let wall = null; t.slice(3).forEach(x => { if (WALLS.includes(x)) wall = x; const kv = x.split('='); if (kv.length === 2) cfg[kv[0]] = isNaN(+kv[1]) ? kv[1] : +kv[1]; });
+      const it = addItem(pid, { cfg, silent: true }); if (!it) throw new Error(`No free space for the ${P(pid).name.toLowerCase()}.`);
+      if (wall && it.wall !== wall && (P(pid).mount !== 'counter')) moveToWall(it, wall);
+      afterChange({ quiet: true }); return `Added a ${P(pid).name.toLowerCase()}${it.wall ? ' on the ' + WALL_NAME[it.wall].toLowerCase() : ''}.`;
+    }
+    const { item: it } = tbRef(t[1]); if (!it) throw new Error('That is not a unit.');
+    if (t[2] === 'remove') { removeItem(it); return `Removed the ${nm(it)}.`; }
+    if (t[2] === 'rotate') { if (!setRotation(it, it.rot + parseFloat(t[3] || 90))) throw new Error(`The ${nm(it)} can't turn there — it would hit something.`); return `Rotated the ${nm(it)} ${parseFloat(t[3] || 90)}°.`; }
+    if (t[2] === 'finish') { const i = parseInt(t[3], 10); if (!P(it.pid).variants[i]) throw new Error('Unknown finish.'); setVariant(it, i); return `The ${nm(it)} is now ${P(it.pid).variants[i].n}.`; }
+    if (t[2] === 'set') { const o = P(it.pid).opts.find(o => o.key === t[3]); if (!o) throw new Error(`The ${nm(it)} has no "${t[3]}" option.`); const v = o.values.find(v => String(v[0]) === t[4]); if (!v) throw new Error(`"${t[4]}" isn't available for the ${nm(it)}.`); const old = JSON.stringify(it.cfg); setCfg(it, o.key, v[0]); if (JSON.stringify(it.cfg) === old && it.cfg[o.key] !== v[0]) throw new Error('Not enough room for that here.'); return `The ${nm(it)} → ${o.label.toLowerCase()} ${v[1]}.`; }
+    if (t[2] === 'to') { if (!WALLS.includes(t[3])) throw new Error('Unknown wall.'); moveToWall(it, t[3]); if (t[4]) { const d = shapeOf(it), ax = alongAxis(t[3]), b = ax === 'x' ? R.x0 : R.z0, sh = wallPlace(it, t[3], b + +t[4] / 100 + (ax === 'x' ? d.hw : d.hd)); if (!collides(sh, it)) { applyShape(it, sh); syncNode(it); afterChange({ quiet: true }); } } return `Moved the ${nm(it)} to the ${WALL_NAME[t[3]].toLowerCase()}.`; }
+    if (t[2] === 'shift') { if (!it.wall) throw new Error(`The ${nm(it)} isn't on a wall — say "move it left/right".`); const x0 = it.x, z0 = it.z; nudge(it, alongAxis(it.wall) === 'x' ? parseFloat(t[3]) / 100 : 0, alongAxis(it.wall) === 'z' ? parseFloat(t[3]) / 100 : 0); if (it.x === x0 && it.z === z0) { const nb = tbSwap(it, Math.sign(parseFloat(t[3]))); if (nb) return `Swapped the ${nm(it)} with the ${nm(nb)} next to it.`; throw new Error(`The ${nm(it)} can't move there — something is in the way.`); } return `Moved the ${nm(it)} ${Math.abs(parseFloat(t[3]))} cm along the ${WALL_NAME[it.wall].toLowerCase()}.`; }
+    if (t[2] === 'move') { const x0 = it.x, z0 = it.z; nudge(it, parseFloat(t[3]) / 100, parseFloat(t[4] || 0) / 100); if (it.x === x0 && it.z === z0) throw new Error(`The ${nm(it)} can't move there — something is in the way.`); return `Moved the ${nm(it)}.`; }
+    throw new Error('Unknown unit command.');
+  }
+  if (op === 'UNDO' || op === 'REDO') { const from = op === 'UNDO' ? TB.undo : TB.redo, to = op === 'UNDO' ? TB.redo : TB.undo; if (!from.length) throw new Error(`Nothing to ${op.toLowerCase()}.`); to.push(JSON.stringify(currentDoc())); tbRestore(JSON.parse(from.pop())); return op === 'UNDO' ? 'Undone.' : 'Redone.'; }
+  throw new Error(`Unknown command "${op}".`);
+}
+/* "move the fridge left" in a packed run means "swap it with its neighbour": exchange two touching floor units on the same
+   wall, carrying the wall cabinets / chimney / loft above each one along with it */
+function tbSwap(it, sign) {
+  if (!it.wall || !sign) return null; const ax = alongAxis(it.wall), s = shapeOf(it), [lo, hi] = alongOf(s, ax);
+  const nb = S.items.filter(o => o !== it && o.wall === it.wall && vOverlap(s, shapeOf(o))).map(o => ({ o, r: alongOf(shapeOf(o), ax) }))
+    .find(x => sign > 0 ? Math.abs(x.r[0] - hi) < .03 : Math.abs(x.r[1] - lo) < .03);
+  if (!nb) return null;
+  const tops = (u, [l, r]) => S.items.filter(o => o !== it && o !== nb.o && o.wall === u.wall && !vOverlap(shapeOf(u), shapeOf(o)) && (([a0, a1]) => a0 >= l - .02 && a1 <= r + .02)(alongOf(shapeOf(o), ax)));
+  const start = Math.min(lo, nb.r[0]), wIt = hi - lo, wNb = nb.r[1] - nb.r[0];
+  const dIt = sign > 0 ? start + wNb - lo : start - lo, dNb = sign > 0 ? start - nb.r[0] : start + wIt - nb.r[0];
+  const moves = [it, ...tops(it, [lo, hi])].map(o => [o, dIt]).concat([nb.o, ...tops(nb.o, nb.r)].map(o => [o, dNb]));
+  const moved = moves.map(m => m[0]), shapes = moves.map(([o, d]) => wallPlace(o, o.wall, (ax === 'x' ? o.x : o.z) + d));
+  if (shapes.some((sh, i) => collides(sh, moved[i], moved) || (P(moved[i].pid).mount === 'floor' && featureHit(sh, true)) || shapes.some((o, j) => j !== i && overlaps(sh, o)))) return null;
+  moves.forEach(([o], i) => { applyShape(o, shapes[i]); syncNode(o); }); afterChange({ keepPanel: true, quiet: true }); return nb.o;
+}
+function tbRestore(doc) { const view = S.view, cam = Object.assign({}, CAM); startDesign(doc); S.view = view; Object.assign(CAM, cam); updateCamera(); renderBottomBar(); markDirty(); }
+
+/* ── the loop: parse → (Claude) → execute → receipts ── */
+async function tbSubmit(text) {
+  text = text.trim(); if (!text || TB.busy) return;
+  if (TB.log[TB.log.length - 1] !== text) { TB.log.push(text); if (TB.log.length > 50) TB.log.shift(); }
+  tbSay('user', text);
+  let cmds = null, via = 'grammar';
+  try { cmds = tbParse(text); } catch (e) { return tbSay('bot', e.message, 'bad'); }
+  if (!cmds && aiReady() && aiMode() !== 'manual') {
+    TB.busy = true; const pend = tbSay('bot', 'Interpreting with Claude…', 'pending'); const t0 = Date.now();
+    try { const out = await aiText(tbSystem(), `${tbScene()}\n\nMessage: ${text}`, null, { effort: 'low', maxTokens: 400 }); cmds = out.split(/\r?\n/).map(l => l.replace(/^[-*\d.)\s]+/, '').trim()).filter(l => /^[A-Z]{3,}/.test(l)); via = `Claude, ${((Date.now() - t0) / 1000).toFixed(0)} s`; }
+    catch (e) { pend.remove(); TB.busy = false; return tbSay('bot', aiErrorText(e), 'bad'); }
+    pend.remove(); TB.busy = false;
+  }
+  if (!cmds || !cmds.length || (cmds.length === 1 && /^NONE\b/.test(cmds[0]))) {
+    const why = cmds && cmds[0] ? cmds[0].replace(/^NONE\s*/, '') : '';
+    return tbSay('bot', 'Doesn’t look like anything to me.' + (why ? ` (${why})` : ''), 'none', ['move the window 30 cm left', 'make the room 330 by 280', 'countertop marble', 'add a microwave']);
+  }
+  const design = cmds.find(c => /^DESIGN\b/.test(c));
+  if (design) return tbDesign(design.replace(/^DESIGN\s*/, '') || text);
+  const mutates = cmds.some(c => !/^(UNDO|REDO|ASK|VIEW|ZOOM|MEASURE|NONE)\b/.test(c)), before = mutates ? JSON.stringify(currentDoc()) : null;
+  const done = [], failed = [];
+  for (const c of cmds) { try { done.push(tbExec(c)); } catch (e) { failed.push(e.none ? 'Doesn’t look like anything to me.' : e.message); } }
+  if (mutates && done.length) { TB.undo.push(before); TB.redo = []; if (TB.undo.length > 30) TB.undo.shift(); }
+  afterChange({ quiet: true, keepPanel: !S.sel });
+  tbSay('bot', [...done.map(x => '✓ ' + x), ...failed.map(x => '✗ ' + x)].join('\n'), failed.length && !done.length ? 'bad' : '', null, via, cmds);
+}
+async function tbDesign(brief) {
+  if (!aiReady()) return tbSay('bot', 'Connect Claude in AI settings to generate a new design.', 'bad');
+  TB.busy = true; const pend = tbSay('bot', 'Designing a new kitchen for this room…', 'pending'), t0 = Date.now(), R = S.room;
+  const room = `Room: ${Math.round((R.x1 - R.x0) * 100)}×${Math.round((R.z1 - R.z0) * 100)} cm, ceiling ${Math.round(R.h * 100)}. Keep these openings: ${R.feats.map(f => `${f.kind.toUpperCase()} ${f.wall} ${Math.round(f.u * 100)}${f.style === 'w2' ? ' double' : ''}`).join(', ') || 'none'}.`;
   try {
-    const out = await aiCall('edit', text, pg.update), dz = out.design; if (!dz) throw new Error('Claude returned no design.');
-    const real = realizeDesign(dz);
-    S.aiUndo = (S.aiUndo || []).concat([JSON.stringify(currentDoc())]).slice(-10);
-    const doc = docFromDesign(dz, real, { id: S.designId }); doc.ai.change = out.change_summary || '';
-    const undo = S.aiUndo; startDesign(doc); S.aiUndo = undo; S.tab = 'ai'; renderPanel(); queueSave();
-    toast(out.change_summary ? 'Updated: ' + out.change_summary.slice(0, 120) : 'Design updated.', { action: 'Undo', fn: aiUndo });
-  } catch (e) { status.innerHTML = ''; status.append(h('div', { class: 'ai-error', role: 'alert' }, aiErrorText(e))); }
-  finally { AI.busy = false; AI.ctrl = null; }
+    const text = await aiText(kdlSystem(), `${room}\nRequest: ${brief}`, null, { effort: 'low', maxTokens: 1500 }), doc = kdlToDoc(text, {});
+    TB.undo.push(JSON.stringify(currentDoc())); doc.id = S.designId; tbRestore(doc); S.tab = 'ai'; renderPanel(); queueSave();
+    pend.remove(); tbSay('bot', `✓ New design “${doc.title}” in ${((Date.now() - t0) / 1000).toFixed(0)} s. Say “undo” to go back.`);
+  } catch (e) { pend.remove(); tbSay('bot', aiErrorText(e), 'bad'); }
+  TB.busy = false;
 }
-function aiUndo() {
-  const u = S.aiUndo || []; if (!u.length) return;
-  const prev = JSON.parse(u.pop()); startDesign(prev); S.aiUndo = u; S.tab = 'ai'; renderPanel(); queueSave(); toast('AI change undone.');
+
+/* ── UI: a dock over the 3D view ── */
+function tbSay(who, text, cls = '', chips, via, cmds) {
+  const log = $('#tb-log'); if (!log) return h('div');
+  const el = h('div', { class: `tb-msg ${who} ${cls}` }, h('div', { class: 'tb-text' }, text));
+  if (via || cmds) el.append(h('div', { class: 'tb-meta' }, via ? `via ${via}` : '', cmds ? h('code', { title: 'Commands that ran' }, cmds.join(' · ')) : null));
+  if (chips) el.append(h('div', { class: 'tb-chips' }, chips.map(c => h('button', { class: 'pillf sm', onclick: () => { $('#tb-input').value = c; $('#tb-input').focus(); } }, c))));
+  log.append(el); while (log.children.length > 12) log.firstChild.remove(); log.scrollTop = log.scrollHeight; $('#textbot').classList.add('open'); return el;
+}
+function initTextbot() {
+  const dock = h('form', { id: 'textbot', class: 'textbot', role: 'region', 'aria-label': 'Text commands', onsubmit: e => { e.preventDefault(); const i = $('#tb-input'); const v = i.value; i.value = ''; tbSubmit(v); } },
+    h('div', { id: 'tb-log', class: 'tb-log', 'aria-live': 'polite' }),
+    h('div', { class: 'tb-bar' }, h('button', { type: 'button', class: 'tb-toggle', 'aria-label': 'Show or hide the conversation', onclick: () => $('#textbot').classList.toggle('open'), html: ico('list', 18) }),
+      h('input', { id: 'tb-input', class: 'tb-input', autocomplete: 'off', enterkeyhint: 'send', placeholder: 'Type a command — “move the window 50 cm left”, “room 12x10 ft”, “add a tall pantry”', 'aria-label': 'Type a command' }),
+      h('button', { type: 'submit', class: 'tb-send', 'aria-label': 'Send', html: ico('arrow', 18) })));
+  $('#view').append(dock);
+  dock.addEventListener('pointerdown', e => e.stopPropagation());
+  // ↑ / ↓ walk back through what you typed (precise commands are often repeated with a new number)
+  let hi = -1; $('#tb-input').addEventListener('keydown', e => {
+    const past = TB.log; if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') { if (e.key.length === 1) hi = -1; return; } if (!past.length) return;
+    e.preventDefault(); hi = e.key === 'ArrowUp' ? Math.min(past.length - 1, hi + 1) : Math.max(-1, hi - 1); e.target.value = hi < 0 ? '' : past[past.length - 1 - hi];
+  });
+  document.addEventListener('keydown', e => { if (e.key === '/' && S.route === 'designer' && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) { e.preventDefault(); $('#tb-input').focus(); } });
 }
 
 /* ═══════════════ 12 · wiring ═══════════════ */
 function init() {
   S.units = store.get('units', 'ft');
-  hydrateIcons(document); initGL(); bindCanvas(); bindRotate();
+  hydrateIcons(document); initGL(); bindCanvas(); bindRotate(); initTextbot();
   $('#btn-sidebar').onclick = () => { S.panelOpen = !S.panelOpen; $('#designer').classList.toggle('panel-closed', !S.panelOpen); $('#btn-sidebar').setAttribute('aria-label', S.panelOpen ? 'Close side panel' : 'Open side panel'); setTimeout(resize, 230); };
   $('#design-title').addEventListener('input', e => { S.title = e.target.value; queueSave(); });
   $('#btn-bag').onclick = $('#hdr-bag').onclick = showBag;
@@ -2284,7 +2837,7 @@ function init() {
   window.addEventListener('hashchange', route);
   window.addEventListener('beforeunload', saveNow);
   updateBagCount(); route();
-  window.__interio = { S, CAM, GL, AI, addItem, select, enterEdit, setView, PRODUCTS, P, refreshWarnings, computeWarnings, shapeOf, priceOf, realizeDesign, currentSpec, aiSchemas, aiSystem }; // handy for debugging
+  window.__interio = { S, CAM, GL, AI, TB, addItem, select, enterEdit, setView, PRODUCTS, P, refreshWarnings, computeWarnings, shapeOf, priceOf, realizeDesign, parseKDL, realizeKDL, kdlSystem, kdlBrief, kdlToDoc, tbParse, tbExec, tbSubmit, tbSystem, tbScene }; // handy for debugging
 }
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
 })();
