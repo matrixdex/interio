@@ -7,92 +7,33 @@
 <meta name="description" content="Interio — a studio where kitchens are composed like a game and built from real modules.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Italiana&family=Manrope:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Italiana&family=JetBrains+Mono:wght@400;500&display=swap">
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
 
 <!-- Global site header (always visible) -->
 <header id="site-header">
-  <a class="brand" href="#" aria-label="Interio home"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span class="brand-name">Interio</span><span class="brand-tag">Kitchen atelier · system 04</span></a>
-  <nav class="site-nav" aria-label="Sections">
-    <button data-goto="system">System</button><button data-goto="atelier">Commission</button><button data-goto="gallery">Collection</button><button data-goto="mydesigns">Archive</button>
-  </nav>
+  <a class="brand" href="#" aria-label="Interio home"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span class="brand-name">Interio</span></a>
   <div class="site-actions">
-    <button class="pill-btn sm ghost" id="hdr-ai" title="Connect Claude, choose the model"><span data-ico="spark" class="mini"></span>Claude</button>
+    <button class="claude-pill" id="hdr-ai" title="Claude connection"><i class="dot" aria-hidden="true"></i><span>Claude</span></button>
     <button class="icon-btn" id="hdr-bag" aria-label="Shopping bag"><span data-ico="bag"></span><b class="badge" id="hdr-bag-count" hidden>0</b></button>
   </div>
 </header>
 
-<!-- ───────────── HUB (landing) ───────────── -->
+<!-- ───────────── HUB: one screen — the brief on the left, the result on the right ───────────── -->
 <main id="hub">
-  <section class="hero">
-    <div class="hero-copy">
-      <p class="kicker"><span>N° 04</span> Modular kitchens — composed in a game, built in the world</p>
-      <h1>Play the kitchen.<br><em>Build</em> the kitchen.</h1>
-      <p class="lede">Interio is a studio for people who design kitchens. Compose a room the way you would play a city-builder: every cabinet, sink and hob is a real module with a part code and a price. When you are done, the drawing is the bill of materials.</p>
-      <div class="hero-cta">
-        <button class="pill-btn primary big" id="hero-go">Begin a commission <span data-ico="arrow"></span></button>
-        <button class="pill-btn big ghost" id="hero-build">Open an empty studio</button>
-      </div>
-      <dl class="specs">
-        <div><dt>Modules</dt><dd id="spec-mods">34</dd></div>
-        <div><dt>Grid</dt><dd>10 cm</dd></div>
-        <div><dt>Design time</dt><dd>~6 s</dd></div>
-        <div><dt>Output</dt><dd>Part list</dd></div>
-      </dl>
-    </div>
-    <figure class="hero-art" aria-hidden="true">
-      <canvas id="hero-canvas" width="640" height="440"></canvas>
-      <figcaption><span>FIG. 01</span> L-kitchen, 4.2 × 2.6 m — printed module by module</figcaption>
-    </figure>
-  </section>
-
-  <section id="system" class="band">
-    <header class="sec-head"><span class="sec-no">01</span><h2>The System</h2><p>A kitchen is a sentence in a language of modules. Twelve parts, a 10 cm grid, and rules the studio never breaks: a chimney over every hob, nothing across a door, the sink and the hob never left out.</p></header>
-    <div class="system-grid" id="system-grid"></div>
-    <div class="kdl-spec-wrap">
-      <div class="kdl-caption"><span class="sec-no">01.1</span><h3>Nine lines make a kitchen</h3><p>Claude writes the intent: walls, the order of modules, the materials. The studio does the geometry, to the centimetre. Less to write, less to go wrong — a design in seconds.</p></div>
-      <div id="kdl-spec" class="kdl-spec"></div>
-    </div>
-  </section>
-
-  <section class="band triad" aria-label="How it works">
-    <header class="sec-head"><span class="sec-no">02</span><h2>Compose · Configure · Fabricate</h2></header>
-    <ol class="steps3">
-      <li><span class="sec-no">i.</span><h3>Compose</h3><p>Describe the room, or type to it — “move the window 50 cm left”, “room 12 × 10 ft”. Pinch, orbit, drag modules in like pieces on a board.</p></li>
-      <li><span class="sec-no">ii.</span><h3>Configure</h3><p>Every module is parametric: width, fronts, burners, bowls, finishes. The price follows each choice, live.</p></li>
-      <li><span class="sec-no">iii.</span><h3>Fabricate</h3><p>The finished drawing is a part list — module codes, sizes, finishes — ready for the workshop.</p></li>
-    </ol>
-  </section>
-
-  <section id="atelier" class="band">
-    <header class="sec-head"><span class="sec-no">03</span><h2>Commission a kitchen</h2><p>Give the studio a room and a way of cooking. It answers with three compositions, fitted to your walls.</p></header>
-    <div id="ai-brief"></div>
-  </section>
-
-  <section id="ai-results" class="band" hidden>
-    <header class="sec-head"><span class="sec-no">03.1</span><h2>Compositions</h2><p id="ai-results-when"></p></header>
-    <div class="gen-grid" id="ai-results-grid"></div>
-  </section>
-
-  <section id="gallery" class="band" hidden>
-    <header class="sec-head"><span class="sec-no">04</span><h2>The Collection</h2><p>Eight kitchens from the studio's archive. They open instantly, and they are what the studio composes from when Claude isn't connected.</p></header>
-    <div class="card-grid" id="gallery-grid"></div>
-  </section>
-
-  <section id="mydesigns" class="band" hidden>
-    <header class="sec-head"><span class="sec-no">05</span><h2>Archive</h2><p>Your kitchens, kept in this browser.</p></header>
-    <div class="card-grid" id="mydesigns-grid"></div>
-  </section>
-
-  <section class="band manual">
-    <p>Prefer a blank sheet? <button class="linkish" id="way-build">Start from an empty room</button> — set your walls, then place modules by hand or by typing.</p>
-  </section>
-
-  <footer class="site-footer">
-    <p class="footer-mark">Play it. <em>Build it.</em></p>
-    <p class="fine">Interio is a prototype. Designs are composed with Claude; modules are drawn from primitives and prices are indicative.</p>
+  <div class="hub-main">
+    <section id="ai-brief" class="brief-pane" aria-label="Kitchen parameters"></section>
+    <section id="stage-pane" class="stage-pane" aria-live="polite">
+      <figure class="hero-art" id="hero-fig" aria-hidden="true"><canvas id="hero-canvas" width="900" height="620"></canvas></figure>
+      <div id="ai-results" class="results" hidden><div id="ai-results-grid" class="results-grid"></div></div>
+      <div id="ai-brief-status" class="stage-status"></div>
+    </section>
+  </div>
+  <footer class="app-foot">
+    <nav aria-label="Your kitchens"><button id="open-saved" hidden>Saved <span id="saved-count"></span></button><button id="open-collection">Collection</button></nav>
+    <nav aria-label="Help"><a href="how-it-works.html">How it works</a><a href="how-to-use.html">How to use</a></nav>
   </footer>
 </main>
 
@@ -181,11 +122,7 @@
 </div>
 
 <div id="modal-root"></div>
-<div id="cookie" hidden>
-  <strong>You are in control of your own cookies</strong>
-  <p>This demo only stores your kitchens, saved units and bag in your browser (localStorage). Nothing leaves your device.</p>
-  <div><button class="pill-btn primary" id="cookie-ok">Ok</button> <button class="pill-btn" id="cookie-set">Cookies settings</button></div>
-</div>
+<div id="cookie" hidden><p>Your kitchens stay in this browser.</p><button class="pill-btn sm" id="cookie-ok">OK</button><button id="cookie-set" hidden></button></div>
 
 <script src="vendor/three.min.js"></script>
 <script src="vendor/anthropic-sdk.min.js"></script>

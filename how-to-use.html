@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How to use — Interio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Italiana&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header id="site-header">
+  <a class="brand" href="index.html" aria-label="Interio home"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span class="brand-name">Interio</span></a>
+</header>
+<main class="page">
+  <a class="back" href="index.html">← Back to Interio</a>
+  <h1>How to use</h1>
+
+  <h2>Generate a kitchen</h2>
+  <ol>
+    <li>Fill in any of the fields on the left, or none.</li>
+    <li>Press <b>Generate AI kitchen design</b>. Three designs appear on the right.</li>
+    <li>Click one to open it in 3D.</li>
+  </ol>
+  <p>Tap a selected option again to clear it. <b>Clear</b> resets the whole brief; <b>Empty room</b> starts with bare walls instead. The dot on <b>Claude</b> at the top shows whether Claude is connected. Without it, designs come from the collection and are tagged <i>Collection</i>.</p>
+
+  <h2>Move around</h2>
+  <table>
+    <tr><th></th><th>Trackpad</th><th>Touch</th><th>Mouse</th></tr>
+    <tr><td>Orbit</td><td>Two-finger scroll</td><td>Drag on empty space, or twist with two fingers</td><td>Drag on empty space</td></tr>
+    <tr><td>Zoom</td><td>Pinch</td><td>Pinch</td><td>Scroll wheel</td></tr>
+    <tr><td>Pan</td><td>Two-finger scroll in top view</td><td>Two-finger drag</td><td>Drag in top view</td></tr>
+  </table>
+  <p>Switch between <b>Dollhouse</b>, <b>Top view</b> and <b>Side views</b> at the bottom. Top view reads like a plan: wall cabinets are drawn dashed.</p>
+
+  <h2>Arrange</h2>
+  <table>
+    <tr><td>Select a module</td><td>Click or tap it</td></tr>
+    <tr><td>Move it</td><td>Drag it; it snaps to walls and neighbours</td></tr>
+    <tr><td>Nudge it</td><td><kbd>←</kbd> <kbd>→</kbd> <kbd>↑</kbd> <kbd>↓</kbd> by 5 cm, with <kbd>Shift</kbd> by 25 cm</td></tr>
+    <tr><td>Remove it</td><td><kbd>Delete</kbd>, or the button under the module</td></tr>
+    <tr><td>Add a module</td><td><b>Add</b> tab: drag a card into the room, or press its <b>+</b></td></tr>
+    <tr><td>Move a door or window</td><td>Drag it along its wall; the distance to each corner is shown as you go</td></tr>
+    <tr><td>Change sizes and finishes</td><td>Select a module, then use the panel on the left; <b>Finishes</b> sets the whole kitchen</td></tr>
+    <tr><td>Change the room</td><td><b>Edit room</b> at the bottom right</td></tr>
+  </table>
+
+  <h2>Type to it</h2>
+  <p>The bar at the bottom of the 3D view takes precise commands. Press <kbd>/</kbd> to focus it and <kbd>↑</kbd> to bring back the last command.</p>
+  <ul>
+    <li><code>move the window 50 cm left</code> · <code>lower the window 10 cm</code> · <code>move the door 20 cm right</code></li>
+    <li><code>move wall to the right</code> · <code>increase room size by 50 cm</code> · <code>room 12x10 ft</code> · <code>raise the ceiling 20 cm</code></li>
+    <li><code>add a tall pantry on the east wall</code> · <code>make the hob 90 with 5 burners</code> · <code>move the fridge left</code></li>
+    <li><code>countertop marble</code> · <code>tiles moroccan dado</code> · <code>top view</code> · <code>what is the price</code></li>
+    <li><code>undo</code> · <code>redo</code></li>
+  </ul>
+  <p>Left and right mean as you face that wall from inside the room. Common phrasings run instantly without AI; anything else goes to Claude when it is connected. Requests outside the kitchen get “Doesn’t look like anything to me.”</p>
+
+  <h2>Keep and share</h2>
+  <p>Designs save automatically in this browser and appear under <b>Saved</b> at the bottom of the home screen. <b>Summary</b> shows the part list with prices.</p>
+</main>
+</body>
+</html>

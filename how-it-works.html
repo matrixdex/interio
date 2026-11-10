@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How it works — Interio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Italiana&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header id="site-header">
+  <a class="brand" href="index.html" aria-label="Interio home"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span class="brand-name">Interio</span></a>
+</header>
+<main class="page">
+  <a class="back" href="index.html">← Back to Interio</a>
+  <h1>How it works</h1>
+
+  <div class="flow">
+    <div><b>Brief</b>Any fields you fill in. All optional.</div>
+    <div><b>Claude</b>Writes the kitchen in about a dozen lines.</div>
+    <div><b>Control layer</b>Turns those lines into exact geometry.</div>
+    <div><b>Studio</b>You refine it in 3D or by typing.</div>
+  </div>
+
+  <h2>1 · The brief</h2>
+  <p>Room size, layout, cooking, household, budget, must-haves, a look and free notes. Leave everything empty and Claude chooses a realistic urban Indian kitchen on its own. Fill in more and the result follows you more closely.</p>
+
+  <h2>2 · Claude writes KDL, not geometry</h2>
+  <p>Claude answers in KDL, a small kitchen design language. It decides only what needs judgement: the room, the doors and windows, which wall gets which modules in what order, and the materials. A design is about 200 words of output, so three designs arrive in parallel in a few seconds.</p>
+<pre>NAME Sage L Kitchen
+TYPE L-shaped
+ROOM 305 274 274                 width × depth × ceiling, cm
+DOOR S 260                       wall, centre along the wall
+WINDOW W 130
+STYLE 2 quartz-white gola subway-sage splash f1 curved
+RUN N 0: b60.3dr hob75.5 b60.2d b60.1d fridge.double
+RUN W 60: sink90.drainer dw60 b60.3dr
+ADD microwave ro</pre>
+  <p>Each token in a <code>RUN</code> is a real module: <code>b60.3dr</code> is a 60 cm base cabinet with three drawers, <code>hob75.5</code> a 75 cm hob unit with five burners. Less to write means less that can vary, and less that can go wrong.</p>
+
+  <h2>3 · The control layer builds it</h2>
+  <p>Deterministic code turns KDL into a placed kitchen and keeps a set of rules Claude never has to think about:</p>
+  <ul>
+    <li>Runs are fitted to their walls. Cabinets are trimmed before anything is left out, and the sink, hob and fridge are never left out.</li>
+    <li>Nothing stands across a door or in its swing, including a door on the neighbouring wall at a corner.</li>
+    <li>The hob, fridge and tall units are kept out from under windows.</li>
+    <li>A chimney goes over every hob; wall cabinets go over base runs; lofts, the microwave and the water purifier find their place.</li>
+    <li>Every adjustment is listed in the design, so you can see what changed and why.</li>
+  </ul>
+  <p>These rules are checked by an automated test that builds hundreds of random rooms and deliberately overfilled designs.</p>
+
+  <h2>4 · The studio</h2>
+  <p>Open a design to see it in 3D. Every module is parametric (width, fronts, burners, bowls, finish) and the price follows each choice. Type commands like “move the window 50 cm left”. When you are done, the summary is a part list: module codes, sizes and finishes.</p>
+
+  <h2>Without Claude</h2>
+  <p>Interio works with no AI connection. It takes the closest designs from its collection and fits them to your room: the size you gave, openings scaled to match, and every run refitted by the control layer. It is instant and free.</p>
+
+  <h2>Connecting Claude</h2>
+  <table>
+    <tr><th>Connection</th><th>What you need</th></tr>
+    <tr><td>Claude Code bridge</td><td>Claude Code on your computer. Run <code>node bridge/claude-code-bridge.mjs</code> from the repository and keep it open.</td></tr>
+    <tr><td>API key</td><td>An Anthropic API key. It is stored only in this browser.</td></tr>
+    <tr><td>Copy &amp; paste</td><td>Any claude.ai account. Interio shows the prompt; you paste the reply back.</td></tr>
+  </table>
+
+  <h2>Your data</h2>
+  <p>Your kitchens, brief and settings are kept in this browser only. Nothing is sent anywhere except the brief, and only to Claude when you have connected it.</p>
+</main>
+</body>
+</html>

@@ -1554,7 +1554,7 @@ function showDesigner() {
 }
 function showHub() {
   if (S.route === 'designer') saveNow();
-  S.route = 'hub'; S.designId = null; $('#hub').hidden = false; $('#designer').hidden = true; document.title = 'Interio — Kitchen Atelier'; closePopovers(); renderHub(); window.scrollTo(0, 0);
+  S.route = 'hub'; S.designId = null; $('#hub').hidden = false; $('#designer').hidden = true; document.title = 'Interio'; closePopovers(); renderHub(); window.scrollTo(0, 0);
 }
 
 /* ═══════════════ 11 · hub ═══════════════ */
@@ -1887,18 +1887,10 @@ function roomCard(name, R, tid, opts = {}) {
   return h('button', { class: 'rcard', onclick: () => opts.onclick ? opts.onclick() : go(tid) }, h('div', { class: 'thumb', html: planSVG(R, opts.items) }),
     h('div', { class: 'meta' }, h('small', null, opts.small || `${sqft(R)} sq.ft`), h('strong', null, name), opts.blurb ? h('span', { class: 'muted', style: 'font-size:13px' }, opts.blurb) : null, h('span', { class: 'go' }, opts.cta || 'Design this kitchen', h('span', { html: ico('arrow', 18) }))));
 }
-function renderHub() {
-  const gm = $('#mydesigns-grid'); gm.innerHTML = '';
-  renderBrief(); renderResults(); renderGallery();
-  const all = Object.values(docs()).filter(d => d && d.room && d.kitchen).sort((a, b) => b.updated - a.updated);
-  $('#mydesigns').hidden = !all.length;
-  all.forEach(d => {
-    const c = roomCard(d.title || 'My kitchen', d.room, d.templateId, { items: d.items, small: `${d.items.length} unit${d.items.length === 1 ? '' : 's'} · ${new Date(d.updated).toLocaleDateString()}${d.ai ? ' · AI design' : ''}`, cta: 'Open design', onclick: () => { location.hash = `#${d.templateId}/${d.id}`; } });
-    const del = h('button', { class: 'pill-btn sm', style: 'margin:0 14px 14px;align-self:flex-start', onclick: e => { e.stopPropagation(); const m = docs(); delete m[d.id]; store.set('designs', m); renderHub(); } }, 'Delete');
-    const wrap = h('div', { class: 'rcard', style: 'padding:0;border:0;box-shadow:none' }); c.style.width = '100%'; wrap.append(c, del); gm.append(wrap);
-  });
-  drawHero(); renderSystem(); hydrateIcons($('#hub'));
-}
+const savedDocs = () => Object.values(docs()).filter(d => d && d.room && d.kitchen).sort((a, b) => b.updated - a.updated);
+function updateHubFoot() { const b = $('#open-saved'), n = savedDocs().length; if (!b) return; b.hidden = !n; $('#saved-count').textContent = n; }
+function updateClaudePill() { const p = $('#hdr-ai'); if (!p) return; const on = aiReady(); p.classList.toggle('on', on); p.title = on ? `Claude · ${AI_MODE_NAME[aiMode()]}` : 'Connect Claude for new designs'; }
+function renderHub() { renderBrief(); renderResults(); updateHubFoot(); updateClaudePill(); hydrateIcons($('#hub')); }
 const fmtHub = R => `${(R.x1 - R.x0).toFixed(1)} × ${(R.z1 - R.z0).toFixed(1)} m`;
 /* hero: an axonometric drawing of a kitchen being "printed" module by module — each one rises from its footprint
    under a brass print line, then gets its part code. Loops; static (fully printed) when motion is reduced. */
@@ -1927,7 +1919,7 @@ function drawHero() {
     g.globalAlpha = .55; for (let i = 0; i <= 42; i++) { const x = i * .1; seg([x, 0, 0], [x, 0, 2.6], INK, i % 6 ? .15 : .4); } for (let i = 0; i <= 26; i++) { const z = i * .1; seg([0, 0, z], [4.2, 0, z], INK, i % 6 ? .15 : .4); } g.globalAlpha = 1;
     // back and side walls as hairline elevations
     path([[0, 0, 0], [4.2, 0, 0], [4.2, 2.45, 0], [0, 2.45, 0]], 'rgba(255,255,255,.35)', INK, .5); path([[0, 0, 0], [0, 0, 2.6], [0, 2.45, 2.6], [0, 2.45, 0]], 'rgba(255,255,255,.2)', INK, .5);
-    const t = reduce ? 1e9 : ((now - HERO.t0) / 1000) % 11, step = .55;
+    const el = (now - HERO.t0) / 1000, t = reduce ? 1e9 : HERO.loop ? el % 11 : Math.min(el, 9), step = .55; // prints once and rests; loops only while Claude works
     const floorRank = HERO_MODS.map((m, i) => [m, i]).filter(([m]) => !m[5]).sort((a, b) => iso(a[0][0] + a[0][2] / 2, 0, a[0][1] + a[0][3] / 2)[0] - iso(b[0][0] + b[0][2] / 2, 0, b[0][1] + b[0][3] / 2)[0]).map(([, i]) => i);
     const order = HERO_MODS.map((m, i) => [m, i]).sort((a, b) => (a[0][0] + a[0][1]) - (b[0][0] + b[0][1]) || a[0][5] - b[0][5]);
     for (const [[x, z, w, d, hgt, y0, kind, code], i] of order) {
@@ -1952,7 +1944,7 @@ function drawHero() {
         seg([x - .03, y1, z + d], [x + w + .03, y1, z + d], BRASS, 1.6); seg([x + w, y1, z - .03], [x + w, y1, z + d + .03], BRASS, 1.6);
       }
     }
-    if (!reduce) HERO.raf = requestAnimationFrame(frame);
+    if (!reduce && (HERO.loop || el < 9.2)) HERO.raf = requestAnimationFrame(frame);
   };
   HERO.raf = requestAnimationFrame(frame);
 }
@@ -2074,17 +2066,12 @@ function docFromDesign(dz, real, extra = {}) {
 const docPrice = doc => doc.items.reduce((s, i) => { const p = P(i.pid); return p ? s + p.price(i.cfg, p.variants[i.v] || p.variants[0]) : s; }, 0);
 
 /* ── progress UI shared by the hub and the planner ── */
-function aiProgress(label) {
-  const think = h('div', { class: 'ai-think' }), stat = h('div', { class: 'ai-stat' }, 'Connecting to Claude…');
-  const cancel = h('button', { class: 'pill-btn sm', onclick: () => AI.ctrl && AI.ctrl.abort() }, 'Cancel');
-  const el = h('div', { class: 'ai-progress', role: 'status', 'aria-live': 'polite' }, h('div', { class: 'ai-row' }, h('span', { class: 'ai-spin', 'aria-hidden': 'true' }), h('b', null, label), cancel), stat, think);
-  let buf = '', got = false; const t0 = Date.now();
-  if (aiMode() === 'manual') { stat.textContent = 'Waiting for you to paste Claude\'s reply…'; cancel.hidden = true; }
-  const tick = setInterval(() => { if (!el.isConnected && Date.now() - t0 > 2000) return clearInterval(tick); if (!got && aiMode() !== 'manual') stat.textContent = `${aiMode() === 'bridge' ? 'Claude Code is designing' : 'Waiting for Claude'}… ${Math.round((Date.now() - t0) / 1000)} s`; }, 1000);
-  return { el, update(e) { got = true;
-    if (e.thinking) { buf = (buf + e.thinking).slice(-420); think.textContent = '“' + buf.replace(/\s+/g, ' ').trim() + '”'; stat.textContent = 'Thinking through the layout…'; }
-    if (e.chars) stat.textContent = `Drawing up the design… ${(e.chars / 1000).toFixed(1)}k characters`;
-  } };
+function aiProgress() {
+  const stat = h('span', { class: 'ai-stat' }), stop = h('button', { class: 'icon-btn sm', 'aria-label': 'Stop', title: 'Stop', html: ico('close', 16), onclick: () => aiCancelAll() });
+  const el = h('div', { class: 'ai-progress', role: 'status' }, h('span', { class: 'ai-spin', 'aria-hidden': 'true' }), stat, stop), t0 = Date.now();
+  const tick = () => { stat.textContent = aiMode() === 'manual' ? 'Waiting for the reply' : `Designing · ${Math.round((Date.now() - t0) / 1000)} s`; if (el.isConnected || Date.now() - t0 < 1500) setTimeout(tick, 500); };
+  tick(); if (aiMode() === 'manual') stop.hidden = true;
+  return { el, update() {} };
 }
 
 /* ── settings ── */
@@ -2117,33 +2104,46 @@ function showAISettings(onSaved) {
 }
 
 /* ── hub: brief → generated proposals ── */
-const BRIEF_DEFAULT = { widthFt: '', depthFt: '', ceilingFt: '9', layout: 'any', people: 4, cooking: 'heavy', budget: 3, must: ['ro', 'microwave'], mood: '', openings: '', extra: '', count: 3 };
+/* ── hub: one screen — a brief where every field is optional, one button, and the designs ── */
+const BRIEF_DEFAULT = { widthFt: '', depthFt: '', ceilingFt: '', layout: 'any', people: '', cooking: '', budget: '', must: [], mood: '', openings: '', extra: '', count: 3 };
 const MUSTS = [['pantry', 'Tall pantry'], ['oven', 'Built-in oven'], ['dishwasher', 'Dishwasher'], ['loft', 'Loft storage'], ['ro', 'RO purifier'], ['microwave', 'Microwave'], ['seating', 'Breakfast seating'], ['bigfridge', 'Double-door fridge']];
-const MOODS = ['Warm wood & white quartz', 'All-white minimal', 'Sage green & brass', 'Navy & marble', 'Dark & dramatic', 'Colourful Moroccan'];
+const MOODS = [['Warm wood & white quartz', '#9a6a3c', '#f3efe6'], ['All-white minimal', '#f7f6f2', '#d6d2ca'], ['Sage green & brass', '#7d9378', '#b08d57'], ['Navy & marble', '#25334b', '#e9e6e0'], ['Dark & dramatic', '#1d1d1f', '#5a5a5c'], ['Colourful Moroccan', '#c4552f', '#2f6f73']];
+const LAYOUTS = [['straight', 'Straight', 'M5 5h22v6H5z'], ['L-shaped', 'L', 'M5 5h22v6H11v16H5z'], ['U-shaped', 'U', 'M5 5h22v22h-6V11H11v16H5z'], ['parallel', 'Galley', 'M5 5h22v6H5zM5 21h22v6H5z'], ['island', 'Island', 'M5 5h22v6H5zM10 18h12v6H10z']];
+const glyph = d => `<svg viewBox="0 0 32 32" width="28" height="28" aria-hidden="true"><rect x="1.5" y="1.5" width="29" height="29" rx="4" fill="none" stroke="currentColor" stroke-opacity=".28"/><path d="${d}" fill="currentColor"/></svg>`;
+const briefUsed = b => Object.keys(BRIEF_DEFAULT).some(k => k !== 'count' && (Array.isArray(b[k]) ? b[k].length : String(b[k] ?? '') !== String(BRIEF_DEFAULT[k])));
 function renderBrief() {
   const root = $('#ai-brief'); if (!root) return;
-  const b = Object.assign({}, BRIEF_DEFAULT, store.get('brief', {})), save = () => store.set('brief', b);
-  const num = (k, attrs) => h('input', Object.assign({ class: 'field', value: b[k], inputmode: 'decimal', oninput: e => { b[k] = e.target.value; save(); } }, attrs));
-  const sel = (k, opts, label) => h('select', { class: 'field', 'aria-label': label, onchange: e => { b[k] = isNaN(+e.target.value) || e.target.value === '' ? e.target.value : +e.target.value; save(); } }, opts.map(([v, n]) => h('option', { value: v, selected: String(b[k]) === String(v) }, n)));
-  const status = h('div', { id: 'ai-brief-status' });
+  const b = Object.assign({}, BRIEF_DEFAULT, store.get('brief', {})); if (!Array.isArray(b.must)) b.must = [];
+  const clear = h('button', { type: 'button', class: 'aux', onclick: () => { store.set('brief', {}); renderBrief(); } }, 'Clear');
+  const save = () => { store.set('brief', b); clear.hidden = !briefUsed(b); };
+  const row = (label, ...kids) => h('div', { class: 'f-row' }, h('span', { class: 'f-lab' }, label), h('div', { class: 'f-ctl' }, ...kids));
+  const num = (k, ph, aria) => h('input', { class: 'f-num', value: b[k] ?? '', placeholder: ph, inputmode: 'decimal', autocomplete: 'off', 'aria-label': aria, oninput: e => { b[k] = e.target.value.replace(/[^\d.]/g, ''); save(); } });
+  const seg = (k, opts, aria, cls = '') => {
+    const g = h('div', { class: 'seg ' + cls, role: 'radiogroup', 'aria-label': aria });
+    const sync = () => [...g.children].forEach((x, i) => { const on = b[k] === opts[i][0]; x.classList.toggle('on', on); x.setAttribute('aria-checked', on); });
+    opts.forEach(([v, label, d]) => g.append(h('button', { type: 'button', role: 'radio', class: 'seg-opt', title: label, onclick: () => { b[k] = b[k] === v ? BRIEF_DEFAULT[k] : v; save(); sync(); } }, d ? h('span', { class: 'glyph', html: glyph(d) }) : null, h('span', null, label))));
+    sync(); return g;
+  };
+  const ppl = h('output', { class: 'step-val' }, b.people || '–');
+  const step = d => h('button', { type: 'button', class: 'step-btn', 'aria-label': d > 0 ? 'More people' : 'Fewer people', html: ico(d > 0 ? 'plus' : 'minus', 16), onclick: () => { const n = (+b.people || (d > 0 ? 0 : 1)) + d; b.people = n < 1 ? '' : String(Math.min(12, n)); ppl.textContent = b.people || '–'; save(); } });
+  const chips = h('div', { class: 'chips2' }, MUSTS.map(([id, n]) => h('button', { type: 'button', class: 'chip2' + (b.must.includes(id) ? ' on' : ''), 'aria-pressed': b.must.includes(id), onclick: e => { b.must = b.must.includes(id) ? b.must.filter(x => x !== id) : [...b.must, id]; save(); e.currentTarget.classList.toggle('on'); e.currentTarget.setAttribute('aria-pressed', b.must.includes(id)); } }, n)));
+  const moodName = h('span', { class: 'f-hint' }, b.mood);
+  const sws = h('div', { class: 'sws' }, MOODS.map(([n, c1, c2]) => h('button', { type: 'button', class: 'sw2' + (b.mood === n ? ' on' : ''), title: n, 'aria-label': n, 'aria-pressed': b.mood === n, style: `--c1:${c1};--c2:${c2}`, onclick: e => { b.mood = b.mood === n ? '' : n; save(); [...sws.children].forEach(x => { const on = x.title === b.mood; x.classList.toggle('on', on); x.setAttribute('aria-pressed', on); }); moodName.textContent = b.mood; } })));
+  const notes = h('textarea', { class: 'f-notes', rows: 2, placeholder: 'Doors, windows, anything else', 'aria-label': 'Notes', oninput: e => { b.extra = e.target.value; save(); } }, b.extra || b.openings || '');
   root.innerHTML = '';
-  root.append(h('div', { class: 'brief' },
-    h('div', { class: 'brief-grid' },
-      h('label', { class: 'lab' }, 'Kitchen size (feet, optional)', h('div', { class: 'dim' }, num('widthFt', { placeholder: 'width', 'aria-label': 'Width in feet' }), h('span', null, '×'), num('depthFt', { placeholder: 'depth', 'aria-label': 'Depth in feet' }), h('span', { class: 'muted' }, 'ceiling'), num('ceilingFt', { 'aria-label': 'Ceiling in feet', style: 'width:64px' }))),
-      h('label', { class: 'lab' }, 'Layout', sel('layout', [['any', 'Let the AI choose'], ['straight', 'Straight'], ['L-shaped', 'L-shaped'], ['U-shaped', 'U-shaped'], ['parallel', 'Parallel (galley)'], ['island', 'Island']], 'Layout')),
-      h('label', { class: 'lab' }, 'Cooking style', sel('cooking', [['heavy', 'Heavy Indian cooking'], ['moderate', 'Regular cooking'], ['light', 'Light cooking']], 'Cooking style')),
-      h('label', { class: 'lab' }, 'People', sel('people', [1, 2, 3, 4, 5, 6, 8].map(n => [n, n + (n === 1 ? ' person' : ' people')]), 'Household size')),
-      h('label', { class: 'lab' }, 'Budget (₹ lakh)', num('budget', { 'aria-label': 'Budget in lakh' })),
-      h('label', { class: 'lab' }, 'Options to generate', sel('count', [[1, '1 design'], [2, '2 designs'], [3, '3 designs']], 'Number of designs'))),
-    h('div', { class: 'lab' }, 'Must-haves', h('div', { class: 'pills' }, MUSTS.map(([id, n]) => h('button', { type: 'button', class: 'pillf' + (b.must.includes(id) ? ' on' : ''), 'aria-pressed': b.must.includes(id), onclick: e => { b.must = b.must.includes(id) ? b.must.filter(x => x !== id) : [...b.must, id]; save(); e.currentTarget.classList.toggle('on'); e.currentTarget.setAttribute('aria-pressed', b.must.includes(id)); } }, n)))),
-    h('label', { class: 'lab' }, 'Look and feel', h('input', { class: 'field', value: b.mood, placeholder: 'e.g. warm wood with white quartz', oninput: e => { b.mood = e.target.value; save(); } }),
-      h('div', { class: 'pills' }, MOODS.map(m => h('button', { type: 'button', class: 'pillf sm', onclick: () => { b.mood = m; save(); renderBrief(); } }, m)))),
-    h('label', { class: 'lab' }, 'Doors and windows', h('input', { class: 'field', value: b.openings, placeholder: 'e.g. door on the south wall near the corner, window on the north wall', oninput: e => { b.openings = e.target.value; save(); } })),
-    h('label', { class: 'lab' }, 'Anything else', h('textarea', { class: 'field', rows: 2, placeholder: 'e.g. mother-in-law is short — keep wall cabinets reachable; we make rotis daily', oninput: e => { b.extra = e.target.value; save(); } }, b.extra)),
-    h('div', { class: 'brief-go' }, h('button', { class: 'pill-btn primary big', onclick: () => generateProposals(b) }, aiReady() ? `Compose ${aiMode() === 'manual' ? 1 : b.count} new design${b.count > 1 && aiMode() !== 'manual' ? 's' : ''}` : `Compose from the collection`, h('span', { html: ico('arrow', 18) })),
-      h('button', { class: 'pill-btn', onclick: () => showAISettings(renderBrief) }, aiReady() ? 'AI settings' : 'Connect Claude'),
-      h('span', { class: 'brief-note' }, aiReady() ? `${AI_MODE_NAME[aiMode()]} · ${(AI_MODELS.find(m => m[0] === AI.cfg.model) || ['', AI.cfg.model])[1].split(' — ')[0]}` : 'Free · instant · fitted to your room. Connect Claude for designs no one has seen.')),
-    status));
+  root.append(h('div', { class: 'f-rows' },
+      row('Room', h('div', { class: 'dims' }, num('widthFt', 'Width', 'Width in feet'), h('i', null, '×'), num('depthFt', 'Depth', 'Depth in feet'), h('i', null, '×'), num('ceilingFt', 'Height', 'Ceiling height in feet'), h('span', { class: 'unit' }, 'ft'))),
+      row('Layout', seg('layout', LAYOUTS, 'Layout', 'glyphs')),
+      row('Cooking', seg('cooking', [['light', 'Light'], ['moderate', 'Regular'], ['heavy', 'Heavy']], 'Cooking')),
+      row('People', h('div', { class: 'stepper2' }, step(-1), ppl, step(1))),
+      row('Budget', h('div', { class: 'dims' }, h('span', { class: 'unit' }, '₹'), num('budget', 'Any', 'Budget in lakh'), h('span', { class: 'unit' }, 'lakh'))),
+      row('Must-haves', chips),
+      row('Look', sws, moodName),
+      row('Notes', notes)),
+    h('div', { class: 'f-go' },
+      h('button', { type: 'button', class: 'cta-gen', onclick: () => generateProposals(b) }, h('span', { html: ico('spark', 18) }), 'Generate AI kitchen design'),
+      h('div', { class: 'f-aux' }, h('button', { type: 'button', class: 'aux', id: 'way-build', onclick: startBuild }, 'Empty room'), clear)));
+  clear.hidden = !briefUsed(b);
 }
 function openDoc(doc) { const d = docs(), copy = JSON.parse(JSON.stringify(doc)); copy.id = uid(); copy.updated = Date.now(); d[copy.id] = copy; store.set('designs', d); location.hash = `#ai/${copy.id}`; }
 
@@ -2211,11 +2211,12 @@ ADD microwave ro`;
   return AI.kdlSys;
 }
 function kdlBrief(b, variant) {
-  const ft = v => Math.round(parseFloat(v) * 30.48);
-  const room = b.widthFt && b.depthFt ? `ROOM ${ft(b.widthFt)} ${ft(b.depthFt)} ${ft(b.ceilingFt || 9)} (N and S walls ${ft(b.widthFt)} cm long, W and E walls ${ft(b.depthFt)} cm)` : `not given — choose a realistic urban Indian kitchen, ceiling ${ft(b.ceilingFt || 9)}`;
-  const must = b.must.map(m => (MUSTS.find(x => x[0] === m) || [m, m])[1].toLowerCase()).join(', ');
-  return [`Room: ${room}.`, b.openings ? `Openings: ${b.openings}.` : '', `Layout: ${b.layout === 'any' ? 'your choice' : b.layout}.`,
-    `${b.people} people, ${{ heavy: 'heavy Indian cooking daily', moderate: 'regular cooking', light: 'light cooking' }[b.cooking]}. Budget ₹${b.budget} lakh.`,
+  const ft = v => Math.round(parseFloat(v) * 30.48), H = ft(b.ceilingFt || 9);
+  const room = b.widthFt && b.depthFt ? `ROOM ${ft(b.widthFt)} ${ft(b.depthFt)} ${H} (N and S walls ${ft(b.widthFt)} cm long, W and E walls ${ft(b.depthFt)} cm)`
+    : b.widthFt || b.depthFt ? `about ${ft(b.widthFt || b.depthFt)} cm on one side; choose the other; ceiling ${H}` : `your choice: a realistic urban Indian kitchen, ceiling ${H}`;
+  const must = (b.must || []).map(m => (MUSTS.find(x => x[0] === m) || [m, m])[1].toLowerCase()).join(', ');
+  const who = [b.people ? `${b.people} people` : '', { heavy: 'heavy Indian cooking daily', moderate: 'regular cooking', light: 'light cooking' }[b.cooking] || ''].filter(Boolean).join(', ');
+  return [`Room: ${room}.`, b.openings ? `Openings: ${b.openings}.` : '', b.layout && b.layout !== 'any' ? `Layout: ${b.layout}.` : '', who ? who + '.' : '', b.budget ? `Budget ₹${b.budget} lakh.` : '',
     must ? `Must have: ${must}.` : '', b.mood ? `Look: ${b.mood}.` : '', b.extra ? `Also: ${b.extra}` : '', variant ? `Variant: ${variant}` : ''].filter(Boolean).join('\n');
 }
 
@@ -2417,7 +2418,8 @@ function realizeKDL(d) {
 }
 /* the deterministic control layer (runs inside realizeDesign's scene context) */
 function controlLayer({ adds, chimStyle, fin, issues }) {
-  const place = (pid, cfg, sh, why) => { if (!sh || collides(sh, sh._tmp) || featureHit(sh, true)) return false; const it = sh._tmp; applyShape(it, sh); S.items.push(it); void why; return true; };
+  const R0 = S.room, outside = sh => sh.x - sh.hw < R0.x0 - .005 || sh.x + sh.hw > R0.x1 + .005 || sh.z - sh.hd < R0.z0 - .005 || sh.z + sh.hd > R0.z1 + .005;
+  const place = (pid, cfg, sh, why) => { if (!sh || outside(sh) || collides(sh, sh._tmp) || featureHit(sh, true)) return false; const it = sh._tmp; applyShape(it, sh); S.items.push(it); void why; return true; };
   const tmpItem = (pid, cfg, v) => ({ uid: uid(), pid, v: v ?? (P(pid).variants[0].fin ? fin : 0), cfg: Object.assign(defCfg(P(pid)), cfg), x: 0, z: 0, rot: 0, wall: null, purpose: '' });
   const at = (it, wall, a0) => { const d = dimsOf(P(it.pid), it.cfg), ax = alongAxis(wall), base = ax === 'x' ? S.room.x0 : S.room.z0; const sh = wallPlace(it, wall, base + a0 + d.w / 2); sh._tmp = it; return sh; };
   // 0 · safety net: a sink, hob or fridge the runs could not hold is placed wherever the planner's own slot finder allows
@@ -2522,7 +2524,7 @@ function galleryMatches(b) {
   const g = window.INTERIO_GALLERY || [];
   const wantW = b.widthFt ? parseFloat(b.widthFt) * 30.48 : null, wantD = b.depthFt ? parseFloat(b.depthFt) * 30.48 : null;
   const score = e => (b.layout !== 'any' && e.type !== b.layout ? 400 : 0) + (wantW ? Math.abs(e.w - wantW) : 0) + (wantD ? Math.abs(e.d - wantD) : 0) + (e.must && b.must.filter(m => !e.must.includes(m)).length * 40);
-  return g.slice().sort((x, y) => score(x) - score(y));
+  const sc = new Map(g.map(e => [e, score(e) + Math.random() * 30])); return g.slice().sort((x, y) => sc.get(x) - sc.get(y));
 }
 const galleryMatch = b => galleryMatches(b)[0] || null;
 function kdlRefit(kdl, b) {
@@ -2547,48 +2549,94 @@ function kdlToDoc(text, extra) {
   const doc = docFromDesign(spec, real, extra); doc.ai.kdl = text.trim(); return doc;
 }
 async function generateProposals(b) {
+  const st = $('#ai-brief-status'); st.innerHTML = '';
   if (!aiReady()) { // free: compose from the collection, fitted to this room
-    const results = composeFromCollection(b, clamp(+b.count || 1, 1, 3)); store.set('gen', { at: Date.now(), results, free: true }); renderResults();
-    if (results.length) $('#ai-results').scrollIntoView({ behavior: 'smooth' }); return;
+    const results = composeFromCollection(b, 3); store.set('gen', { at: Date.now(), results, free: true }); renderResults(); return;
   }
   if (AI.busy) return; AI.busy = true;
-  const n = aiMode() === 'manual' ? 1 : clamp(+b.count || 1, 1, 3), st = $('#ai-brief-status'), pg = aiProgress(`Designing ${n} kitchen${n > 1 ? 's' : ''} with Claude`); st.innerHTML = ''; st.append(pg.el);
-  const results = [], cache = store.get('kcache', {}), t0 = Date.now();
+  const n = aiMode() === 'manual' ? 1 : 3, pg = aiProgress(); st.append(pg.el);
+  const results = [], t0 = Date.now();
   const publish = () => { store.set('gen', { at: Date.now(), results }); renderResults(); };
+  HERO.loop = true; publish(); // clears the stage: the drawing prints while Claude works
   const m = galleryMatch(b);
-  if (m) { try { results.push(kdlToDoc(kdlRefit(m.kdl, b), { brief: b, instant: true })); publish(); $('#ai-results').scrollIntoView({ behavior: 'smooth' }); } catch (e) { /* bad gallery entry */ } }
+  if (m) { try { results.push(kdlToDoc(kdlRefit(m.kdl, b), { brief: b, instant: true })); publish(); } catch (e) { /* bad gallery entry */ } }
   const jobs = VARIANTS.slice(0, n).map(async (variant, i) => {
-    const user = kdlBrief(b, n > 1 ? variant : ''), key = hashStr(AI.cfg.model + '|' + user);
-    let text = cache[key], cached = !!text;
-    if (!text) text = await aiText(kdlSystem(), user, i === 0 ? pg.update : null, { effort: 'low', maxTokens: 1500 });
-    const doc = kdlToDoc(text, { brief: b, secs: cached ? 0 : Math.round((Date.now() - t0) / 1000), cached });
-    if (!cached) { cache[key] = text; const keys = Object.keys(cache); if (keys.length > 40) delete cache[keys[0]]; store.set('kcache', cache); }
+    const text = await aiText(kdlSystem(), kdlBrief(b, n > 1 ? variant : ''), i === 0 ? pg.update : null, { effort: 'low', maxTokens: 1500 });
+    const doc = kdlToDoc(text, { brief: b, secs: Math.round((Date.now() - t0) / 1000) });
     const at = results.findIndex(r => r.instant); if (at >= 0) results.splice(at, 1);
     results.push(doc); publish();
   });
-  const settled = await Promise.allSettled(jobs); AI.busy = false; st.innerHTML = '';
+  const settled = await Promise.allSettled(jobs); AI.busy = false; HERO.loop = false; st.innerHTML = '';
   const fails = settled.filter(s => s.status === 'rejected').map(s => aiErrorText(s.reason));
-  if (fails.length) st.append(h('div', { class: 'ai-error', role: 'alert' }, fails.length === n ? fails[0] : `${n - fails.length} of ${n} designs arrived. ${fails[0]}`));
+  if (fails.length && !(fails.length === n && /cancel/i.test(fails[0]))) st.append(h('div', { class: 'ai-error', role: 'alert' }, fails.length === n ? fails[0] : `${n - fails.length} of ${n} designs arrived. ${fails[0]}`));
+  renderResults();
+}
+/* results: cards arrive with a critically damped spring; only new cards animate */
+const SEEN = new Set();
+function kitchenCard(doc, onOpen, i = 0, extra) {
+  const fresh = !SEEN.has(doc.id); SEEN.add(doc.id);
+  return h('div', { class: 'kcard' + (fresh ? ' enter' : ''), style: `--i:${i}` },
+    h('button', { class: 'kc-hit', 'aria-label': `Open ${doc.title}`, onclick: onOpen },
+      h('div', { class: 'kc-plan', html: planSVG(doc.room, doc.items) }),
+      h('div', { class: 'kc-meta' }, h('strong', null, doc.title), h('span', null, `${fmtHub(doc.room)} · ${priceHTML(docPrice(doc)).replace(/<[^>]+>/g, '')}`))),
+    doc.collection || doc.instant ? h('i', { class: 'kc-tag', title: 'From the collection. Connect Claude for new designs.' }, 'Collection') : null, extra || null);
 }
 function renderResults() {
-  const sec = $('#ai-results'), grid = $('#ai-results-grid'), gen = store.get('gen', null);
-  sec.hidden = !(gen && gen.results && gen.results.length); grid.innerHTML = ''; if (sec.hidden) return;
-  $('#ai-results-when').textContent = 'Generated ' + new Date(gen.at).toLocaleString();
-  gen.results.forEach(doc => {
-    const R = doc.room, issues = doc.ai.issues || [];
-    grid.append(h('div', { class: 'gcard' },
-      h('div', { class: 'thumb', html: planSVG(R, doc.items) }),
-      h('div', { class: 'meta' }, h('small', null, `${doc.ai.layout_type} · ${fmtHub(R)} · ${doc.items.length} units`, doc.instant ? h('span', { class: 'tag' }, 'instant match') : doc.collection ? h('span', { class: 'tag' }, 'from the collection') : doc.cached ? h('span', { class: 'tag' }, 'cached') : doc.secs != null ? h('span', { class: 'tag ok' }, `${doc.secs} s`) : null),
-        h('strong', null, doc.title), h('p', null, doc.ai.concept),
-        h('ul', { class: 'hl' }, (doc.ai.highlights || []).slice(0, 4).map(x => h('li', null, x))),
-        h('div', { class: 'gfoot' }, h('span', { class: 'pprice', html: priceHTML(docPrice(doc)) }), issues.length ? h('span', { class: 'adj', title: issues.join('\n') }, `${issues.length} auto-adjustment${issues.length > 1 ? 's' : ''}`) : null),
-        h('button', { class: 'pill-btn primary', onclick: () => openDoc(doc) }, 'Open in 3D ', h('span', { html: ico('arrow', 16) })))));
-  });
+  const sec = $('#ai-results'), grid = $('#ai-results-grid'), fig = $('#hero-fig'), gen = store.get('gen', null), has = !!(gen && gen.results && gen.results.length);
+  if (!sec) return;
+  sec.hidden = !has; fig.hidden = has; grid.innerHTML = '';
+  if (!has) { drawHero(); return; }
+  gen.results.forEach((doc, i) => grid.append(kitchenCard(doc, () => openDoc(doc), i)));
 }
-function renderGallery() {
-  const sec = $('#gallery'), grid = $('#gallery-grid'), g = window.INTERIO_GALLERY || []; if (!sec) return;
-  sec.hidden = !g.length; grid.innerHTML = '';
-  g.forEach(e => { try { const doc = kdlToDoc(e.kdl, { gallery: true }); grid.append(roomCard(doc.title, doc.room, 'ai', { items: doc.items, blurb: doc.ai.concept, small: `${doc.ai.layout_type} · ${fmtHub(doc.room)} · ${priceHTML(docPrice(doc)).replace(/<[^>]+>/g, '')}`, cta: 'Open in 3D', onclick: () => openDoc(doc) })); } catch (err) { /* skip a bad entry */ } });
+function renderGallery() { /* the collection lives in a sheet now (footer → Collection) */ }
+function openCollection(trigger) {
+  let close; const g = h('div', { class: 'sheet-grid' });
+  (window.INTERIO_GALLERY || []).forEach((e, i) => { try { const doc = kdlToDoc(e.kdl, { gallery: true }); g.append(kitchenCard(doc, () => { close(); openDoc(doc); }, i)); } catch (err) { /* skip a bad entry */ } });
+  close = openSheet('Collection', g, trigger);
+}
+function openSaved(trigger) {
+  let close; const g = h('div', { class: 'sheet-grid' });
+  savedDocs().forEach((d, i) => {
+    const del = h('button', { class: 'kc-del', 'aria-label': `Delete ${d.title || 'kitchen'}`, title: 'Delete', html: ico('trash', 16), onclick: () => { const m = docs(); delete m[d.id]; store.set('designs', m); card.remove(); updateHubFoot(); if (!savedDocs().length) close(); } });
+    const card = kitchenCard(Object.assign({}, d, { title: d.title || 'My kitchen' }), () => { close(); location.hash = `#${d.templateId}/${d.id}`; }, i, del); g.append(card);
+  });
+  close = openSheet('Saved', g, trigger);
+}
+
+/* ── a sheet: rises from its trigger, can be grabbed mid-flight and flicked away (velocity-projected), returns the same way ── */
+const projectMomentum = (v, d = .998) => (v / 1000) * d / (1 - d);
+const rubberband = (o, dim, c = .55) => (o * dim * c) / (dim + c * Math.abs(o));
+function openSheet(title, body, trigger) {
+  const root = $('#modal-root'); root.innerHTML = '';
+  const grab = h('div', { class: 'sheet-grab', 'aria-hidden': 'true' }), head = h('div', { class: 'sheet-head' }, h('h3', null, title), h('button', { class: 'icon-btn', 'aria-label': 'Close', html: ico('close', 20), onclick: () => close() }));
+  const sheet = h('div', { class: 'sheet', role: 'dialog', 'aria-modal': 'true', 'aria-label': title, tabindex: '-1' }, grab, head, h('div', { class: 'sheet-body' }, body)), scrim = h('div', { class: 'sheet-scrim' });
+  root.append(scrim, sheet);
+  if (trigger) { const r = trigger.getBoundingClientRect(), s = sheet.getBoundingClientRect(); sheet.style.transformOrigin = `${clamp(r.left + r.width / 2 - s.left, 0, s.width)}px 100%`; }
+  const H = () => sheet.offsetHeight + 24, now = () => new DOMMatrixReadOnly(getComputedStyle(sheet).transform).m42 || 0; // the presentation value, mid-animation included
+  const set = (y, anim) => { const e = anim ? 'var(--spring-sheet-d) var(--spring-sheet)' : '0s'; sheet.style.transition = `transform ${e}`; sheet.style.transform = `translateY(${y}px)`; scrim.style.transition = `opacity ${anim ? '.3s' : '0s'}`; scrim.style.opacity = String(clamp(1 - Math.max(0, y) / H(), 0, 1)); };
+  let closing = false, drag = null;
+  const esc = e => { if (e.key === 'Escape') close(); };
+  const close = () => { closing = true; set(H(), true); setTimeout(() => { if (closing) { root.innerHTML = ''; document.removeEventListener('keydown', esc); if (trigger) trigger.focus({ preventScroll: true }); } }, 380); };
+  set(H(), false); requestAnimationFrame(() => requestAnimationFrame(() => { set(0, true); sheet.focus({ preventScroll: true }); }));
+  document.addEventListener('keydown', esc); scrim.addEventListener('click', close);
+  const down = e => { if (e.target.closest('button')) return; closing = false; const y0 = now(); set(y0, false); drag = { id: e.pointerId, sy: e.clientY, y0, hist: [[e.clientY, performance.now()]] }; try { e.currentTarget.setPointerCapture(e.pointerId); } catch (err) { /* synthetic */ } };
+  const move = e => { if (!drag || e.pointerId !== drag.id) return; let y = drag.y0 + e.clientY - drag.sy; if (y < 0) y = -rubberband(-y, H()); set(y, false); drag.hist.push([e.clientY, performance.now()]); if (drag.hist.length > 6) drag.hist.shift(); };
+  const up = () => { if (!drag) return; const [a, z] = [drag.hist[0], drag.hist[drag.hist.length - 1]], v = (z[0] - a[0]) / Math.max(1, z[1] - a[1]) * 1000; drag = null; if (now() + projectMomentum(v) > H() * .45) close(); else set(0, true); };
+  for (const el of [grab, head]) { el.addEventListener('pointerdown', down); el.addEventListener('pointermove', move); el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up); }
+  return close;
+}
+/* Apple's two-parameter spring (damping ratio, response) → a CSS linear() easing and its settle time */
+function springEase(damping, response) {
+  const w = 2 * Math.PI / response, z = damping, wd = w * Math.sqrt(Math.max(1e-6, 1 - z * z));
+  const x = t => z >= 1 ? 1 - (1 + w * t) * Math.exp(-w * t) : 1 - Math.exp(-z * w * t) * (Math.cos(wd * t) + (z * w / wd) * Math.sin(wd * t));
+  let T = .1; while (T < 2.5 && !(Math.abs(1 - x(T)) < .002 && Math.abs(1 - x(T + .08)) < .002)) T += .01;
+  const pts = []; for (let i = 0; i <= 48; i++) pts.push(+x(T * i / 48).toFixed(4)); pts[pts.length - 1] = 1;
+  return { ease: `linear(${pts.join(', ')})`, dur: Math.round(T * 1000) + 'ms' };
+}
+function installSprings() {
+  if (!(window.CSS && CSS.supports && CSS.supports('transition-timing-function', 'linear(0, 1)'))) return; // falls back to the cubic-bezier defaults in CSS
+  const st = document.documentElement.style;
+  for (const [name, d, r] of [['spring', 1, .4], ['spring-sheet', .8, .3], ['spring-bounce', .8, .4]]) { const s = springEase(d, r); st.setProperty('--' + name, s.ease); st.setProperty('--' + name + '-d', s.dur); }
 }
 
 
@@ -2932,7 +2980,7 @@ function initTextbot() {
 /* ═══════════════ 12 · wiring ═══════════════ */
 function init() {
   S.units = store.get('units', 'ft');
-  hydrateIcons(document); initGL(); bindCanvas(); bindRotate(); initTextbot();
+  hydrateIcons(document); installSprings(); initGL(); bindCanvas(); bindRotate(); initTextbot();
   $('#btn-sidebar').onclick = () => { S.panelOpen = !S.panelOpen; $('#designer').classList.toggle('panel-closed', !S.panelOpen); $('#btn-sidebar').setAttribute('aria-label', S.panelOpen ? 'Close side panel' : 'Open side panel'); setTimeout(resize, 230); };
   $('#design-title').addEventListener('input', e => { S.title = e.target.value; queueSave(); });
   $('#btn-bag').onclick = $('#hdr-bag').onclick = showBag;
@@ -2963,12 +3011,9 @@ function init() {
     const d = e.shiftKey ? .25 : .05, m = { ArrowLeft: [-d, 0], ArrowRight: [d, 0], ArrowUp: [0, -d], ArrowDown: [0, d] }[e.key];
     if (m) { e.preventDefault(); nudge(S.sel, m[0], m[1]); }
   });
-  $('#hero-go').onclick = () => $('#ai-brief').scrollIntoView({ behavior: 'smooth' });
-  $('#way-build').onclick = startBuild; $('#hero-build').onclick = startBuild;
-  document.querySelectorAll('[data-goto]').forEach(b => { b.onclick = () => { const away = S.route !== 'hub'; if (away) location.hash = ''; setTimeout(() => { const t = document.getElementById(b.dataset.goto); if (t && !t.hidden) t.scrollIntoView({ behavior: 'smooth' }); }, away ? 80 : 0); }; });
-  const nmods = document.getElementById('spec-mods'); if (nmods) nmods.textContent = PRODUCTS.length;
-  $('#hdr-ai').onclick = () => showAISettings(() => { if (S.route === 'hub') renderBrief(); else renderPanel(true); });
-  if (!store.get('cookies', false)) { $('#cookie').hidden = false; $('#cookie-ok').onclick = () => { store.set('cookies', true); $('#cookie').hidden = true; }; $('#cookie-set').onclick = () => { store.set('cookies', true); $('#cookie').hidden = true; toast('Only local storage is used.'); }; }
+  $('#open-saved').onclick = e => openSaved(e.currentTarget); $('#open-collection').onclick = e => openCollection(e.currentTarget);
+  $('#hdr-ai').onclick = () => showAISettings(() => { updateClaudePill(); if (S.route !== 'hub') renderPanel(true); });
+  if (!store.get('cookies', false)) { $('#cookie').hidden = false; $('#cookie-ok').onclick = () => { store.set('cookies', true); $('#cookie').hidden = true; };  }
   window.addEventListener('hashchange', route);
   window.addEventListener('beforeunload', saveNow);
   updateBagCount(); route();
