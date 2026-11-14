@@ -1992,10 +1992,16 @@ function aiErrorText(e) {
   if (A.AuthenticationError && e instanceof A.AuthenticationError) return 'Claude rejected the API key — check it in AI settings.';
   if (A.PermissionDeniedError && e instanceof A.PermissionDeniedError) return "This key doesn't have access to that model — pick another in AI settings.";
   if (A.NotFoundError && e instanceof A.NotFoundError) return 'Model not found — pick another model in AI settings.';
+  const unreachable = (A.APIConnectionError && e instanceof A.APIConnectionError) || /connection error|failed to fetch|networkerror|load failed/i.test((e && e.message) || '');
+  if (unreachable && aiMode() === 'bridge' && /127\.0\.0\.1|localhost/.test(AI.cfg.proxy || '')) {
+    const local = location.protocol === 'file:' || /^(localhost|127\.0\.0\.1)$/.test(location.hostname);
+    return local ? "Couldn't reach the Claude Code bridge. Is it running? (node bridge/claude-code-bridge.mjs)"
+      : `Couldn't reach the bridge on this computer. Start it with --origin ${location.origin}, and allow this site to access your local network when the browser asks (site settings → Local network access).`;
+  }
+  if (unreachable) return "Couldn't reach Claude — check your internet connection or proxy URL.";
   if (aiMode() === 'bridge' && A.APIError && e instanceof A.APIError && e.message) return e.message.replace(/^\d{3}\s+/, '').replace(/^\{.*"message":"([^"]+)".*$/, '$1');
   if (A.RateLimitError && e instanceof A.RateLimitError) return 'Rate limited by the Claude API — wait a moment and try again.';
   if (A.BadRequestError && e instanceof A.BadRequestError) return 'Claude rejected the request: ' + e.message;
-  if (A.APIConnectionError && e instanceof A.APIConnectionError) return "Couldn't reach Claude — check your internet connection or proxy URL.";
   if (A.APIError && e instanceof A.APIError) return `Claude API error ${e.status ?? ''}: ${e.message}`;
   return (e && e.message) || String(e);
 }

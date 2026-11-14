@@ -40,6 +40,15 @@ Open **AI settings** (top right) and pick one of three connections:
    in the app, choose *Claude Code's default model* there, or start the bridge with a fixed model:
    `--model opus` (alias for the newest Opus your Claude Code knows) or e.g. `--model claude-opus-4-7`. The bridge binds to 127.0.0.1 and is for
    your own use — don't expose it to others. (Windows: run it in WSL.)
+   **From the live site (GitHub Pages).** This works too, but only in the browser on the computer that runs the bridge:
+
+   ```bash
+   node bridge/claude-code-bridge.mjs --origin https://matrixdex.github.io
+   ```
+
+   Chrome asks whether the site may access your local network the first time it reaches the bridge: allow it (or
+   later: site settings → Local network access). Other visitors' browsers look for a bridge on *their own* machine,
+   find none, and fall back to the collection. Your subscription is never shared.
 2. **API key** — calls the Claude API directly; the key is stored only in that browser.
    For a public site, deploy `proxy/cloudflare-worker.js` and use its URL in the bridge/proxy field.
 3. **Copy & paste with Claude** — no setup: the planner shows the exact prompt; send it in claude.ai
