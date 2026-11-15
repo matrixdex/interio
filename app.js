@@ -1907,12 +1907,12 @@ const DRAFT = HERO_MODS.map(m => m.slice(0, 7)).concat([
   [1.5, 1.45, 1.5, .8, .86, 0, 'drawers'], [3.3, 0, .7, .7, 1.75, 0, 'fridge'], [1.95, 0, .6, .6, .86, 0, 'door'], [0, 1.9, .6, .6, 2.1, 0, 'tall'],
   [2.4, 0, .9, .6, .86, 0, 'hob'], [0, .6, .6, .9, .86, 0, 'sink'], [2.4, 0, .9, .35, .7, 1.45, 'wall'], [3.6, .6, .6, .6, .86, 0, 'drawers']
 ]).map((m, i) => m.concat([3.4 + ((i * 37) % 31) / 10, ((i * 53) % 47) / 10])); // + period, offset (s)
-function drawHero() {
-  const cv = $('#hero-canvas'); if (!cv) return;
+function drawHero(target) {
+  const cv = target || $('#hero-canvas'); if (!cv) return;
   const reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
   cancelAnimationFrame(HERO.raf); HERO.t0 = performance.now();
   const frame = now => {
-    if (!cv.isConnected || $('#hub').hidden) return;
+    if (!cv.isConnected || !cv.offsetParent) return; // not on screen any more
     const dpr = Math.min(2, window.devicePixelRatio || 1), cw = cv.clientWidth || 640, ch = cv.clientHeight || 420;
     if (cv.width !== Math.round(cw * dpr)) { cv.width = Math.round(cw * dpr); cv.height = Math.round(ch * dpr); }
     const g = cv.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, cw, ch);
@@ -2584,8 +2584,8 @@ function kdlToDoc(text, extra) {
    designs arriving → three columns, pending ones still printing */
 const GEN = { busy: false, n: 0, t0: 0, timer: 0, rot: 0, drawing: false };
 const GEN_LINES = ['brr, AI design loading', 'your new kitchen is coming up', 'autokitchen loading'];
-function genRotate(on) {
-  clearInterval(GEN.rot); const t = $('#gen-view h2'); if (!t) return;
+function genRotate(on, el) {
+  clearInterval(GEN.rot); const t = el || $('#gen-view h2'); if (!t) return;
   if (!on) return;
   let i = 0; t.textContent = GEN_LINES[0]; t.classList.remove('out');
   GEN.rot = setInterval(() => { t.classList.add('out'); setTimeout(() => { i = (i + 1) % GEN_LINES.length; t.textContent = GEN_LINES[i]; t.classList.remove('out'); }, 380); }, 3000);
@@ -2615,11 +2615,50 @@ function genClock() {
   const tick = () => { const s = Math.round((Date.now() - GEN.t0) / 1000), m = $('#gen-meta'); if (m) m.textContent = `${GEN.n} kitchen${GEN.n > 1 ? 's' : ''} · ${s} s`; $$('.col-pending .t').forEach(x => { x.textContent = `${s} s`; }); };
   tick(); GEN.timer = setInterval(tick, 500);
 }
+/* a still of a design, rendered once with the studio's own scene (same modules, finishes and camera it opens with).
+   The live scene is restored afterwards, so whatever the studio holds is untouched. */
+const SNAP = { cache: new Map(), queue: [], busy: false };
+function snapshotDoc(doc) {
+  if (SNAP.cache.has(doc.id)) return SNAP.cache.get(doc.id);
+  if (!GL.renderer) return null;
+  const keep = { room: S.room, items: S.items, view: S.view, sel: S.sel, mode: S.mode, cam: Object.assign({}, CAM), vw: GL.vw, vh: GL.vh, aspect: GL.persp.aspect };
+  const load = (room, items) => {
+    GL.itemGroup.children.slice().forEach(c => { GL.itemGroup.remove(c); disposeTree(c); });
+    S.room = room; S.items = items; S.sel = null; S.mode = 'design'; S.view = 'dollhouse';
+    if (!room) return; for (const it of items) attachItem(it); buildRoom();
+  };
+  let url = null;
+  try {
+    const room = JSON.parse(JSON.stringify(doc.room)); room.style = Object.assign({}, DEFAULT_STYLE, room.style || {}); room.fin = room.fin || 0;
+    const items = (doc.items || []).filter(d => P(d.pid)).map(d => ({ uid: uid(), pid: d.pid, v: d.v || 0, cfg: Object.assign(defCfg(P(d.pid)), d.cfg || {}), x: d.x, z: d.z, rot: d.rot || 0, wall: d.wall ?? null, purpose: '' }));
+    load(room, items); fitCamera(); CAM.az = 38; CAM.el = 30; CAM.px = 0; CAM.pz = 0;
+    const W = 900, H = 900; GL.renderer.setSize(W, H, false); GL.vw = W; GL.vh = H; GL.persp.aspect = W / H; GL.persp.updateProjectionMatrix(); updateCamera();
+    // frame the whole room: pull the camera until its eight corners sit inside 88% of the frame
+    const R = S.room, corners = []; for (const x of [R.x0, R.x1]) for (const y of [0, R.h]) for (const z of [R.z0, R.z1]) corners.push(new THREE.Vector3(x, y, z));
+    for (let k = 0; k < 6; k++) { const m = Math.max(...corners.map(v => { const q = v.clone().project(GL.cam); return Math.max(Math.abs(q.x), Math.abs(q.y)); })); CAM.dist = clamp(CAM.dist * m / .88, 2, 80); updateCamera(); }
+    GL.renderer.setClearColor(0xebe6dd, 1); GL.renderer.render(GL.scene, GL.cam); url = GL.renderer.domElement.toDataURL('image/jpeg', .88);
+  } catch (e) { console.warn('snapshot failed', e); }
+  // put everything back
+  GL.renderer.setClearColor(0xdcd6cb, 1); Object.assign(CAM, keep.cam);
+  const restoreItems = keep.items || []; load(keep.room, restoreItems); S.view = keep.view; S.mode = keep.mode; S.sel = keep.sel;
+  GL.vw = keep.vw; GL.vh = keep.vh; GL.persp.aspect = keep.aspect; GL.persp.updateProjectionMatrix(); resize();
+  if (url) SNAP.cache.set(doc.id, url);
+  return url;
+}
+/* render stills one at a time after the columns are on screen; each fades in when ready */
+function queueSnapshot(doc, img) {
+  const hit = SNAP.cache.get(doc.id); if (hit) { img.src = hit; img.classList.add('in'); return; }
+  SNAP.queue.push([doc, img]); if (SNAP.busy) return; SNAP.busy = true;
+  const next = () => { const job = SNAP.queue.shift(); if (!job) { SNAP.busy = false; return; } const [d, im] = job; if (im.isConnected) { const u = snapshotDoc(d); if (u) { im.src = u; im.onload = () => im.classList.add('in'); } } setTimeout(next, 16); };
+  setTimeout(next, 30);
+}
 const SEEN = new Set();
 function planColumn(doc, onOpen, i = 0, extra) {
   const fresh = !SEEN.has(doc.id); SEEN.add(doc.id);
+  const shot = h('img', { alt: '', draggable: 'false' }); queueSnapshot(doc, shot);
   return h('div', { class: 'col' + (fresh ? ' enter' : ''), style: `--i:${i}` },
     h('button', { class: 'col-hit', 'aria-label': `Open ${doc.title}`, onclick: onOpen },
+      h('div', { class: 'col-shot' }, shot),
       h('div', { class: 'col-plan', html: planSVG(doc.room, doc.items) }),
       h('div', { class: 'col-meta' }, h('strong', null, doc.title),
         h('span', null, `${doc.ai.layout_type !== 'other' ? doc.ai.layout_type + ' · ' : ''}${fmtHub(doc.room)} · ${priceHTML(docPrice(doc)).replace(/<[^>]+>/g, '')}${doc.collection ? ' · from the collection' : ''}`))),
@@ -2996,16 +3035,32 @@ async function tbSubmit(text) {
   afterChange({ quiet: true, keepPanel: !S.sel });
   tbSay('bot', [...done.map(x => '✓ ' + x), ...failed.map(x => '✗ ' + x)].join('\n'), failed.length && !done.length ? 'bad' : '', null, via, cmds);
 }
+/* the studio's own generation view: the same draft, lines, timer and Stop, covering the 3D view */
+function viewGen(on) {
+  let v = $('#view-gen');
+  if (!v && on) {
+    v = h('div', { id: 'view-gen', class: 'gen-view view-gen' }, h('canvas', { 'aria-hidden': 'true' }), h('h2'), h('p'),
+      h('button', { type: 'button', class: 'text-btn', onclick: () => { viewGen.stopped = true; aiCancelAll(); viewGen(false); TB.busy = false; } }, 'Stop'), h('div', { class: 'gen-bar', 'aria-hidden': 'true' }, h('i')));
+    $('#view').append(v);
+  }
+  if (!v) return;
+  clearInterval(viewGen.t);
+  if (!on) { v.hidden = true; HERO.loop = false; genRotate(false); return; }
+  v.hidden = false; const bar = $('.gen-bar i', v); bar.style.animation = 'none'; void bar.offsetWidth; bar.style.animation = '';
+  HERO.loop = true; drawHero($('canvas', v)); genRotate(true, $('h2', v));
+  const t0 = Date.now(), p = $('p', v), tick = () => { p.textContent = `1 kitchen · ${Math.round((Date.now() - t0) / 1000)} s`; }; tick(); viewGen.t = setInterval(tick, 500);
+}
 async function tbDesign(brief) {
   if (!aiReady()) return tbSay('bot', 'Connect Claude in AI settings to generate a new design.', 'bad');
-  TB.busy = true; const pend = tbSay('bot', 'Designing a new kitchen for this room…', 'pending'), t0 = Date.now(), R = S.room;
+  TB.busy = true; viewGen.stopped = false; const pend = { remove() { viewGen(false); } }, t0 = Date.now(), R = S.room; viewGen(true);
   const room = `Room: ${Math.round((R.x1 - R.x0) * 100)}×${Math.round((R.z1 - R.z0) * 100)} cm, ceiling ${Math.round(R.h * 100)}. Keep these openings: ${R.feats.map(f => `${f.kind.toUpperCase()} ${f.wall} ${Math.round(f.u * 100)}${f.style === 'w2' ? ' double' : ''}`).join(', ') || 'none'}.`;
   try {
     const text = await aiText(kdlSystem(), `${room}\nRequest: ${brief}`, null, { effort: 'low', maxTokens: 1500 }), doc = kdlToDoc(text, {});
+    if (viewGen.stopped) return; // stopped: a late reply is ignored
     TB.undo.push(JSON.stringify(currentDoc())); doc.id = S.designId; tbRestore(doc); S.tab = 'ai'; renderPanel(); queueSave();
     pend.remove(); tbSay('bot', `✓ New design “${doc.title}” in ${((Date.now() - t0) / 1000).toFixed(0)} s. Say “undo” to go back.`);
-  } catch (e) { pend.remove(); tbSay('bot', aiErrorText(e), 'bad'); }
-  TB.busy = false;
+  } catch (e) { pend.remove(); const m = aiErrorText(e); if (!/^cancelled/i.test(m)) tbSay('bot', m, 'bad'); }
+  TB.busy = false; viewGen(false);
 }
 
 /* ── UI: a dock over the 3D view ── */

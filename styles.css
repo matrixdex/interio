@@ -1081,3 +1081,36 @@ html,body{background:var(--paper);font-family:var(--ui);font-size:14px;letter-sp
 .app-foot #cookie{position:static;display:flex;align-items:baseline;gap:14px;padding:0;background:none;max-width:none}
 .app-foot #cookie p{color:var(--muted);font-size:13px}
 .app-foot #cookie .pill-btn{height:auto;border:0;padding:0;color:var(--ink);background:none;font-size:13px;text-decoration:underline;text-underline-offset:3px}
+/* generating: the line sits in the middle of the stage, over the draft */
+.gen-view{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center}
+.gen-view h2{position:static;max-width:86%;font-size:clamp(68px,7.2vw,112px);line-height:1.02;margin:0}
+.gen-view p{position:static;margin:22px 0 0;font-size:14px}
+.gen-view::before{content:"";position:absolute;inset:0;background:radial-gradient(ellipse at center,rgba(235,230,221,.82) 0,rgba(235,230,221,.55) 38%,rgba(235,230,221,0) 70%);pointer-events:none;z-index:-1}
+.gen-view>*{position:relative}
+.gen-view .text-btn{position:absolute;right:var(--gut);top:clamp(24px,4.4vh,46px)}
+.gen-view .gen-bar{position:absolute}
+/* a column: the kitchen as it opens, its plan, its name */
+.col-shot{flex:1.35;min-height:0;position:relative;background:var(--paper-2);border-bottom:1px solid var(--rule)}
+.col-shot img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:50% 55%;opacity:0;transition:opacity .5s var(--spring);user-select:none;-webkit-user-drag:none;pointer-events:none}
+.col-shot img.in{opacity:1}
+.col-plan{flex:1}
+.col-plan svg{inset:10% 18% 4%;width:64%;height:86%}
+.col-hit:hover .col-shot img{opacity:.92}
+.sheet-grid .col{min-height:440px}
+@media (max-width:1023px),(max-height:619px){ .col{min-height:72vh} }
+#hub .gen-view h2{font-family:var(--display);font-weight:400;font-size:clamp(68px,7.2vw,112px);line-height:1.02;letter-spacing:0;margin:0;color:var(--ink)}
+.col-shot img{object-fit:contain;object-position:50% 50%}
+#hub .gen-view h2{font-size:clamp(44px,3.6vw,64px);line-height:1.08}
+/* the studio's generation view covers the 3D view */
+.view-gen{position:absolute;inset:0;z-index:9;background:var(--paper-2);background-image:linear-gradient(rgba(20,20,18,.04) 1px,transparent 1px),linear-gradient(90deg,rgba(20,20,18,.04) 1px,transparent 1px);background-size:40px 40px;pointer-events:auto}
+.view-gen[hidden]{display:none}
+.view-gen canvas{position:absolute;inset:0;width:100%;height:100%;z-index:0}
+.view-gen h2{position:relative;z-index:1;font-family:var(--display);font-weight:400;font-size:clamp(44px,3.6vw,64px);line-height:1.08;letter-spacing:0;margin:0;color:var(--ink);max-width:86%;transition:opacity .38s var(--spring),transform .38s var(--spring)}
+.view-gen h2.out{opacity:0;transform:translateY(-6px)}
+.view-gen p{position:relative;z-index:1;margin:22px 0 0;font-size:14px;color:var(--muted);font-variant-numeric:tabular-nums}
+.view-gen::before{z-index:0}
+.view-gen canvas{z-index:0}
+.view-gen::before{z-index:1}
+.view-gen h2,.view-gen p{z-index:2}
+.view-gen .text-btn,.view-gen .gen-bar{z-index:2}
+.view-gen h2,.view-gen p{top:auto;left:auto}
