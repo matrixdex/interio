@@ -896,7 +896,7 @@ function worldBox(it) { return it.node ? new THREE.Box3().setFromObject(it.node)
 /* item operations ─ every mutation funnels through afterChange() */
 function afterChange(opts = {}) {
   refreshTotals(); refreshWarnings(); refreshTiles(); positionOverlay(); markDirty(); queueSave();
-  if (!opts.quiet) { S.actions++; maybeFeedback(); }
+  if (!opts.quiet) S.actions++;
   if (S.stripOpen) S.stripDirty = true;
   if (!opts.keepPanel) renderPanel(); else refreshAIPlan();
 }
@@ -1383,14 +1383,6 @@ function modal(content, wide, onClose) {
   const box = h('div', { class: 'modal' + (wide ? ' wide' : ''), role: 'dialog', 'aria-modal': 'true' }, h('button', { class: 'xbtn', 'aria-label': 'Close', html: ico('close', 20), onclick: close }), content);
   const scrim = h('div', { class: 'scrim', onclick: e => { if (e.target === scrim) close(); } }, box); root.append(scrim);
   document.addEventListener('keydown', esc); return close;
-}
-function maybeFeedback() {
-  if (S.feedbackShown || S.actions < 9) return; S.feedbackShown = true;
-  setTimeout(() => {
-    let c; c = modal(h('div', null, h('h3', null, 'How is your design experience?'), h('p', { class: 'muted' }, "We'd love to hear any ideas on how this could be better…"),
-      h('div', { class: 'emoji' }, ['😞', '🙁', '😐', '🙂', '😀'].map((e, i) => h('button', { 'aria-label': ['Bad', 'Poor', 'Okay', 'Good', 'Great'][i], onclick: () => { c(); } }, e))),
-      h('div', { style: 'display:flex;justify-content:space-between;color:var(--muted);font-size:12px;padding:0 12px' }, h('span', null, 'Bad'), h('span', null, 'Good'))));
-  }, 600);
 }
 let toastTimer;
 function toast(msg, act) {
