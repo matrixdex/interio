@@ -1901,6 +1901,12 @@ const HERO_MODS = [ // x, z, w, d, h, y0, kind, code   (metres; back run along x
   [0, .6, .6, .6, .86, 0, 'door', 'B60·2D'], [0, 1.2, .6, .7, 1.75, 0, 'fridge', 'FRIDGE·2D'],
   [1.27, 0, .6, .42, .5, 1.62, 'chimney', 'CHIM60'], [1.95, 0, .45, .35, .7, 1.45, 'wall', 'W45'], [3.3, 0, .6, .35, .7, 1.45, 'wall', 'W60'], [.6, 0, .6, .35, .7, 1.45, 'wall', 'W60']
 ];
+/* while Claude designs: a draft that never settles — modules (and alternatives for the same spots) rise in,
+   hold, and dissolve, each on its own cycle; everything translucent, outlines dashed: work in progress */
+const DRAFT = HERO_MODS.map(m => m.slice(0, 7)).concat([
+  [1.5, 1.45, 1.5, .8, .86, 0, 'drawers'], [3.3, 0, .7, .7, 1.75, 0, 'fridge'], [1.95, 0, .6, .6, .86, 0, 'door'], [0, 1.9, .6, .6, 2.1, 0, 'tall'],
+  [2.4, 0, .9, .6, .86, 0, 'hob'], [0, .6, .6, .9, .86, 0, 'sink'], [2.4, 0, .9, .35, .7, 1.45, 'wall'], [3.6, .6, .6, .6, .86, 0, 'drawers']
+]).map((m, i) => m.concat([3.4 + ((i * 37) % 31) / 10, ((i * 53) % 47) / 10])); // + period, offset (s)
 function drawHero() {
   const cv = $('#hero-canvas'); if (!cv) return;
   const reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -1919,7 +1925,27 @@ function drawHero() {
     g.globalAlpha = .55; for (let i = 0; i <= 42; i++) { const x = i * .1; seg([x, 0, 0], [x, 0, 2.6], INK, i % 6 ? .15 : .4); } for (let i = 0; i <= 26; i++) { const z = i * .1; seg([0, 0, z], [4.2, 0, z], INK, i % 6 ? .15 : .4); } g.globalAlpha = 1;
     // back and side walls as hairline elevations
     path([[0, 0, 0], [4.2, 0, 0], [4.2, 2.45, 0], [0, 2.45, 0]], 'rgba(255,255,255,.35)', INK, .5); path([[0, 0, 0], [0, 0, 2.6], [0, 2.45, 2.6], [0, 2.45, 0]], 'rgba(255,255,255,.2)', INK, .5);
-    const el = (now - HERO.t0) / 1000, t = reduce ? 1e9 : HERO.loop ? el % 11 : Math.min(el, 9), step = .55; // prints once and rests; loops only while Claude works
+    const el = (now - HERO.t0) / 1000;
+    if (HERO.loop) {
+      const live = DRAFT.map(([x, z, w, d, hgt, y0, kind, P, off]) => {
+        const ph = reduce ? .4 : ((el + off) % P) / P; let a = 0, s = 1;
+        if (ph < .16) { s = 1 - Math.pow(1 - ph / .16, 3); a = s; } else if (ph < .62) a = 1; else if (ph < .78) a = 1 - (ph - .62) / .16;
+        return { x, z, w, d, hgt, y0, kind, a, s };
+      }).filter(o => o.a > .01).sort((p1, p2) => (p1.x + p1.z) - (p2.x + p2.z) || p1.y0 - p2.y0);
+      for (const o of live) {
+        const { x, z, w, d, y0, kind } = o, y1 = y0 + o.hgt * o.s;
+        g.setLineDash([4, 3]); g.globalAlpha = .5 * o.a;
+        path([[x, y1, z + d], [x + w, y1, z + d], [x + w, y0, z + d], [x, y0, z + d]], kind === 'fridge' ? '#d9dcdc' : '#ece7dd', INK, .7);
+        path([[x + w, y1, z], [x + w, y1, z + d], [x + w, y0, z + d], [x + w, y0, z]], '#cdc6b9', INK, .7);
+        path([[x, y1, z], [x + w, y1, z], [x + w, y1, z + d], [x, y1, z + d]], kind === 'hob' ? '#3a3a38' : '#f6f3ee', INK, .7);
+        if (kind === 'sink') path([[x + .1, y1, z + .1], [x + w - .1, y1, z + .1], [x + w - .1, y1, z + d - .12], [x + .1, y1, z + d - .12]], '#c9ccce', INK, .5);
+        g.setLineDash([]); g.globalAlpha = .7 * o.a; if (!y0) path([[x, 0, z], [x + w, 0, z], [x + w, 0, z + d], [x, 0, z + d]], null, BRASS, .9);
+      }
+      g.globalAlpha = 1; g.setLineDash([]);
+      if (!reduce) HERO.raf = requestAnimationFrame(frame);
+      return;
+    }
+    const t = reduce ? 1e9 : Math.min(el, 9), step = .55; // the idle drawing prints once and rests
     const floorRank = HERO_MODS.map((m, i) => [m, i]).filter(([m]) => !m[5]).sort((a, b) => iso(a[0][0] + a[0][2] / 2, 0, a[0][1] + a[0][3] / 2)[0] - iso(b[0][0] + b[0][2] / 2, 0, b[0][1] + b[0][3] / 2)[0]).map(([, i]) => i);
     const order = HERO_MODS.map((m, i) => [m, i]).sort((a, b) => (a[0][0] + a[0][1]) - (b[0][0] + b[0][1]) || a[0][5] - b[0][5]);
     for (const [[x, z, w, d, hgt, y0, kind, code], i] of order) {
@@ -1944,7 +1970,7 @@ function drawHero() {
         seg([x - .03, y1, z + d], [x + w + .03, y1, z + d], BRASS, 1.6); seg([x + w, y1, z - .03], [x + w, y1, z + d + .03], BRASS, 1.6);
       }
     }
-    if (!reduce && (HERO.loop || el < 9.2)) HERO.raf = requestAnimationFrame(frame);
+    if (!reduce && el < 9.2) HERO.raf = requestAnimationFrame(frame);
   };
   HERO.raf = requestAnimationFrame(frame);
 }
@@ -2130,11 +2156,11 @@ function renderBrief() {
     opts.forEach(([v, label, d]) => g.append(h('button', { type: 'button', role: 'radio', class: 'seg-opt', title: label, onclick: () => { b[k] = b[k] === v ? BRIEF_DEFAULT[k] : v; save(); sync(); } }, d ? h('span', { class: 'glyph', html: glyph(d) }) : null, h('span', null, label))));
     sync(); return g;
   };
-  const ppl = h('output', { class: 'step-val' }, b.people || '–');
-  const step = d => h('button', { type: 'button', class: 'step-btn', 'aria-label': d > 0 ? 'More people' : 'Fewer people', html: ico(d > 0 ? 'plus' : 'minus', 16), onclick: () => { const n = (+b.people || (d > 0 ? 0 : 1)) + d; b.people = n < 1 ? '' : String(Math.min(12, n)); ppl.textContent = b.people || '–'; save(); } });
-  const chips = h('div', { class: 'chips2' }, MUSTS.map(([id, n]) => h('button', { type: 'button', class: 'chip2' + (b.must.includes(id) ? ' on' : ''), 'aria-pressed': b.must.includes(id), onclick: e => { b.must = b.must.includes(id) ? b.must.filter(x => x !== id) : [...b.must, id]; save(); e.currentTarget.classList.toggle('on'); e.currentTarget.setAttribute('aria-pressed', b.must.includes(id)); } }, n)));
+  const ppl = h('output', { class: 'step-val' + (b.people ? '' : ' unset') }, b.people || 'Any');
+  const step = d => h('button', { type: 'button', class: 'step-btn', 'aria-label': d > 0 ? 'More people' : 'Fewer people', html: ico(d > 0 ? 'plus' : 'minus', 16), onclick: () => { const n = (+b.people || (d > 0 ? 0 : 1)) + d; b.people = n < 1 ? '' : String(Math.min(12, n)); ppl.textContent = b.people || 'Any'; ppl.classList.toggle('unset', !b.people); save(); } });
+  const chips = h('div', { class: 'chips2' }, MUSTS.map(([id, n]) => h('button', { type: 'button', class: 'chip3' + (b.must.includes(id) ? ' on' : ''), 'aria-pressed': b.must.includes(id), onclick: e => { b.must = b.must.includes(id) ? b.must.filter(x => x !== id) : [...b.must, id]; save(); e.currentTarget.classList.toggle('on'); e.currentTarget.setAttribute('aria-pressed', b.must.includes(id)); } }, n)));
   const moodName = h('span', { class: 'f-hint' }, b.mood);
-  const sws = h('div', { class: 'sws' }, MOODS.map(([n, c1, c2]) => h('button', { type: 'button', class: 'sw2' + (b.mood === n ? ' on' : ''), title: n, 'aria-label': n, 'aria-pressed': b.mood === n, style: `--c1:${c1};--c2:${c2}`, onclick: e => { b.mood = b.mood === n ? '' : n; save(); [...sws.children].forEach(x => { const on = x.title === b.mood; x.classList.toggle('on', on); x.setAttribute('aria-pressed', on); }); moodName.textContent = b.mood; } })));
+  const sws = h('div', { class: 'sws' }, MOODS.map(([n, c1, c2]) => h('button', { type: 'button', class: 'sw3' + (b.mood === n ? ' on' : ''), title: n, 'aria-label': n, 'aria-pressed': b.mood === n, style: `--c1:${c1};--c2:${c2}`, onclick: e => { b.mood = b.mood === n ? '' : n; save(); [...sws.children].forEach(x => { const on = x.title === b.mood; x.classList.toggle('on', on); x.setAttribute('aria-pressed', on); }); moodName.textContent = b.mood; } })));
   const notes = h('textarea', { class: 'f-notes', rows: 2, placeholder: 'Doors, windows, anything else', 'aria-label': 'Notes', oninput: e => { b.extra = e.target.value; save(); } }, b.extra || b.openings || '');
   root.innerHTML = '';
   root.append(h('div', { class: 'f-rows' },
@@ -2147,7 +2173,7 @@ function renderBrief() {
       row('Look', sws, moodName),
       row('Notes', notes)),
     h('div', { class: 'f-go' },
-      h('button', { type: 'button', class: 'cta-gen', onclick: () => generateProposals(b) }, h('span', { html: ico('spark', 18) }), 'Generate AI kitchen design'),
+      h('button', { type: 'button', class: 'cta-gen', onclick: () => generateProposals(b) }, 'Generate AI kitchen design'),
       h('div', { class: 'f-aux' }, h('button', { type: 'button', class: 'aux', id: 'way-build', onclick: startBuild }, 'Empty room'), clear)));
   clear.hidden = !briefUsed(b);
 }
@@ -2554,57 +2580,80 @@ function kdlToDoc(text, extra) {
   const d = parseKDL(text), { spec, real } = realizeKDL(d);
   const doc = docFromDesign(spec, real, extra); doc.ai.kdl = text.trim(); return doc;
 }
+/* generation state drives the layout: idle → the drawing; generating → the whole stage is the generation view;
+   designs arriving → three columns, pending ones still printing */
+const GEN = { busy: false, n: 0, t0: 0, timer: 0, rot: 0, drawing: false };
+const GEN_LINES = ['brr, AI design loading', 'your new kitchen is coming up', 'autokitchen loading'];
+function genRotate(on) {
+  clearInterval(GEN.rot); const t = $('#gen-view h2'); if (!t) return;
+  if (!on) return;
+  let i = 0; t.textContent = GEN_LINES[0]; t.classList.remove('out');
+  GEN.rot = setInterval(() => { t.classList.add('out'); setTimeout(() => { i = (i + 1) % GEN_LINES.length; t.textContent = GEN_LINES[i]; t.classList.remove('out'); }, 380); }, 3000);
+}
 async function generateProposals(b) {
-  const st = $('#ai-brief-status'); st.innerHTML = '';
+  const st = $('#ai-brief-status'); st.textContent = '';
   if (!aiReady()) { // free: compose from the collection, fitted to this room
     const results = composeFromCollection(b, 3); store.set('gen', { at: Date.now(), results, free: true }); renderResults(); return;
   }
   if (AI.busy) return; AI.busy = true;
-  const n = aiMode() === 'manual' ? 1 : 3, pg = aiProgress(); st.append(pg.el);
-  const results = [], t0 = Date.now();
+  const n = aiMode() === 'manual' ? 1 : 3, results = [];
+  Object.assign(GEN, { busy: true, n, t0: Date.now() }); HERO.loop = true;
   const publish = () => { store.set('gen', { at: Date.now(), results }); renderResults(); };
-  HERO.loop = true; publish(); // clears the stage: the drawing prints while Claude works
-  const m = galleryMatch(b);
-  if (m) { try { results.push(kdlToDoc(kdlRefit(m.kdl, b), { brief: b, instant: true })); publish(); } catch (e) { /* bad gallery entry */ } }
-  const jobs = VARIANTS.slice(0, n).map(async (variant, i) => {
-    const text = await aiText(kdlSystem(), kdlBrief(b, n > 1 ? variant : ''), i === 0 ? pg.update : null, { effort: 'low', maxTokens: 1500 });
-    const doc = kdlToDoc(text, { brief: b, secs: Math.round((Date.now() - t0) / 1000) });
-    const at = results.findIndex(r => r.instant); if (at >= 0) results.splice(at, 1);
-    results.push(doc); publish();
+  publish(); genClock();
+  const jobs = VARIANTS.slice(0, n).map(async variant => {
+    const text = await aiText(kdlSystem(), kdlBrief(b, n > 1 ? variant : ''), null, { effort: 'low', maxTokens: 1500 });
+    results.push(kdlToDoc(text, { brief: b, secs: Math.round((Date.now() - GEN.t0) / 1000) })); publish();
   });
-  const settled = await Promise.allSettled(jobs); AI.busy = false; HERO.loop = false; st.innerHTML = '';
+  const settled = await Promise.allSettled(jobs);
+  AI.busy = false; GEN.busy = false; GEN.drawing = false; HERO.loop = false; clearInterval(GEN.timer); genRotate(false);
   const fails = settled.filter(s => s.status === 'rejected').map(s => aiErrorText(s.reason));
-  if (fails.length && !(fails.length === n && /cancel/i.test(fails[0]))) st.append(h('div', { class: 'ai-error', role: 'alert' }, fails.length === n ? fails[0] : `${n - fails.length} of ${n} designs arrived. ${fails[0]}`));
+  if (fails.length && !/^cancelled/i.test(fails[0])) st.textContent = fails.length === n ? fails[0] : `${n - fails.length} of ${n} designs arrived. ${fails[0]}`;
   renderResults();
 }
-/* results: cards arrive with a critically damped spring; only new cards animate */
+function genClock() {
+  clearInterval(GEN.timer);
+  const tick = () => { const s = Math.round((Date.now() - GEN.t0) / 1000), m = $('#gen-meta'); if (m) m.textContent = `${GEN.n} kitchen${GEN.n > 1 ? 's' : ''} · ${s} s`; $$('.col-pending .t').forEach(x => { x.textContent = `${s} s`; }); };
+  tick(); GEN.timer = setInterval(tick, 500);
+}
 const SEEN = new Set();
-function kitchenCard(doc, onOpen, i = 0, extra) {
+function planColumn(doc, onOpen, i = 0, extra) {
   const fresh = !SEEN.has(doc.id); SEEN.add(doc.id);
-  return h('div', { class: 'kcard' + (fresh ? ' enter' : ''), style: `--i:${i}` },
-    h('button', { class: 'kc-hit', 'aria-label': `Open ${doc.title}`, onclick: onOpen },
-      h('div', { class: 'kc-plan', html: planSVG(doc.room, doc.items) }),
-      h('div', { class: 'kc-meta' }, h('strong', null, doc.title), h('span', null, `${fmtHub(doc.room)} · ${priceHTML(docPrice(doc)).replace(/<[^>]+>/g, '')}`))),
-    doc.collection || doc.instant ? h('i', { class: 'kc-tag', title: 'From the collection. Connect Claude for new designs.' }, 'Collection') : null, extra || null);
+  return h('div', { class: 'col' + (fresh ? ' enter' : ''), style: `--i:${i}` },
+    h('button', { class: 'col-hit', 'aria-label': `Open ${doc.title}`, onclick: onOpen },
+      h('div', { class: 'col-plan', html: planSVG(doc.room, doc.items) }),
+      h('div', { class: 'col-meta' }, h('strong', null, doc.title),
+        h('span', null, `${doc.ai.layout_type !== 'other' ? doc.ai.layout_type + ' · ' : ''}${fmtHub(doc.room)} · ${priceHTML(docPrice(doc)).replace(/<[^>]+>/g, '')}${doc.collection ? ' · from the collection' : ''}`))),
+    extra || null);
 }
+const pendingColumn = () => h('div', { class: 'col col-pending', 'aria-hidden': 'true' }, h('div', { class: 'col-plan' }, h('div', { class: 'gen-bar' }, h('i'))), h('div', { class: 'col-meta' }, h('strong', null, 'Designing'), h('span', { class: 't' }, '')));
 function renderResults() {
-  const sec = $('#ai-results'), grid = $('#ai-results-grid'), fig = $('#hero-fig'), gen = store.get('gen', null), has = !!(gen && gen.results && gen.results.length);
-  if (!sec) return;
-  sec.hidden = !has; fig.hidden = has; grid.innerHTML = '';
-  if (!has) { drawHero(); return; }
-  gen.results.forEach((doc, i) => grid.append(kitchenCard(doc, () => openDoc(doc), i)));
+  const sec = $('#ai-results'), grid = $('#ai-results-grid'), fig = $('#hero-fig'), gv = $('#gen-view'); if (!sec) return;
+  const gen = store.get('gen', null), list = (gen && gen.results) || [];
+  if (GEN.busy) { // the whole stage is the draft until every design is in
+    sec.hidden = true; fig.hidden = false; gv.hidden = false;
+    if (!GEN.drawing) { GEN.drawing = true; drawHero(); genRotate(true); const bar = $('.gen-bar i', gv); bar.style.animation = 'none'; void bar.offsetWidth; bar.style.animation = ''; }
+    return;
+  }
+  const any = list.length > 0;
+  sec.hidden = !any; fig.hidden = any; gv.hidden = true;
+  grid.innerHTML = '';
+  if (!any) { drawHero(); return; }
+  const cols = GEN.busy ? Math.max(GEN.n, list.length) : list.length; grid.style.setProperty('--cols', cols);
+  list.forEach((doc, i) => grid.append(planColumn(doc, () => openDoc(doc), i)));
+  for (let i = list.length; i < cols; i++) grid.append(pendingColumn());
+  if (GEN.busy) genClock();
 }
-function renderGallery() { /* the collection lives in a sheet now (footer → Collection) */ }
+function renderGallery() { /* the collection lives in a sheet (footer → Collection) */ }
 function openCollection(trigger) {
   let close; const g = h('div', { class: 'sheet-grid' });
-  (window.INTERIO_GALLERY || []).forEach((e, i) => { try { const doc = kdlToDoc(e.kdl, { gallery: true }); g.append(kitchenCard(doc, () => { close(); openDoc(doc); }, i)); } catch (err) { /* skip a bad entry */ } });
+  (window.INTERIO_GALLERY || []).forEach((e, i) => { try { const doc = kdlToDoc(e.kdl, { gallery: true }); g.append(planColumn(doc, () => { close(); openDoc(doc); }, i)); } catch (err) { /* skip a bad entry */ } });
   close = openSheet('Collection', g, trigger);
 }
 function openSaved(trigger) {
   let close; const g = h('div', { class: 'sheet-grid' });
   savedDocs().forEach((d, i) => {
-    const del = h('button', { class: 'kc-del', 'aria-label': `Delete ${d.title || 'kitchen'}`, title: 'Delete', html: ico('trash', 16), onclick: () => { const m = docs(); delete m[d.id]; store.set('designs', m); card.remove(); updateHubFoot(); if (!savedDocs().length) close(); } });
-    const card = kitchenCard(Object.assign({}, d, { title: d.title || 'My kitchen' }), () => { close(); location.hash = `#${d.templateId}/${d.id}`; }, i, del); g.append(card);
+    const del = h('button', { class: 'col-del text-btn', 'aria-label': `Delete ${d.title || 'kitchen'}`, onclick: () => { const m = docs(); delete m[d.id]; store.set('designs', m); card.remove(); updateHubFoot(); if (!savedDocs().length) close(); } }, 'Delete');
+    const card = planColumn(Object.assign({ ai: { layout_type: 'other' } }, d, { title: d.title || 'My kitchen' }), () => { close(); location.hash = `#${d.templateId}/${d.id}`; }, i, del); g.append(card);
   });
   close = openSheet('Saved', g, trigger);
 }
@@ -3017,9 +3066,10 @@ function init() {
     const d = e.shiftKey ? .25 : .05, m = { ArrowLeft: [-d, 0], ArrowRight: [d, 0], ArrowUp: [0, -d], ArrowDown: [0, d] }[e.key];
     if (m) { e.preventDefault(); nudge(S.sel, m[0], m[1]); }
   });
+  $('#gen-stop').onclick = () => aiCancelAll();
   $('#open-saved').onclick = e => openSaved(e.currentTarget); $('#open-collection').onclick = e => openCollection(e.currentTarget);
   $('#hdr-ai').onclick = () => showAISettings(() => { updateClaudePill(); if (S.route !== 'hub') renderPanel(true); });
-  if (!store.get('cookies', false)) { $('#cookie').hidden = false; $('#cookie-ok').onclick = () => { store.set('cookies', true); $('#cookie').hidden = true; };  }
+  if (!store.get('cookies', false)) { const foot = $('.app-foot'); if (foot) foot.insertBefore($('#cookie'), foot.lastElementChild); $('#cookie').hidden = false; $('#cookie-ok').onclick = () => { store.set('cookies', true); $('#cookie').hidden = true; };  }
   window.addEventListener('hashchange', route);
   window.addEventListener('beforeunload', saveNow);
   updateBagCount(); route();

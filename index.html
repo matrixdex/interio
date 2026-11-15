@@ -16,7 +16,7 @@
 <header id="site-header">
   <a class="brand" href="#" aria-label="Interio home"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span class="brand-name">Interio</span></a>
   <div class="site-actions">
-    <button class="claude-pill" id="hdr-ai" title="Claude connection"><i class="dot" aria-hidden="true"></i><span>Claude</span></button>
+    <button class="claude-pill" id="hdr-ai" title="Claude connection"><i class="dot" aria-hidden="true"></i>Claude</button>
     <button class="icon-btn" id="hdr-bag" aria-label="Shopping bag"><span data-ico="bag"></span><b class="badge" id="hdr-bag-count" hidden>0</b></button>
   </div>
 </header>
@@ -27,8 +27,14 @@
     <section id="ai-brief" class="brief-pane" aria-label="Kitchen parameters"></section>
     <section id="stage-pane" class="stage-pane" aria-live="polite">
       <figure class="hero-art" id="hero-fig" aria-hidden="true"><canvas id="hero-canvas" width="900" height="620"></canvas></figure>
-      <div id="ai-results" class="results" hidden><div id="ai-results-grid" class="results-grid"></div></div>
-      <div id="ai-brief-status" class="stage-status"></div>
+      <div id="gen-view" class="gen-view" hidden>
+        <h2>Designing</h2>
+        <p id="gen-meta"></p>
+        <button type="button" id="gen-stop" class="text-btn">Stop</button>
+        <div class="gen-bar" aria-hidden="true"><i></i></div>
+      </div>
+      <div id="ai-results" class="results" hidden><div id="ai-results-grid" class="triptych"></div></div>
+      <div id="ai-brief-status" class="stage-msg" role="alert"></div>
     </section>
   </div>
   <footer class="app-foot">
