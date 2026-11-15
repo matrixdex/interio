@@ -4,6 +4,7 @@
      2. every hob has a chimney above it
      3. no two units overlap; every unit is inside the room
      4. no floor unit stands in a doorway or its swing
+     5. a fridge, tall unit or dishwasher has 60 cm of clear floor in front of it
    Run:  node tests/kdl-property.test.js [cases=300] [seed=1]
    Needs Playwright with Chromium (npm i -D playwright && npx playwright install chromium). */
 const { chromium } = require('playwright');
@@ -53,6 +54,13 @@ const N = +process.argv[2] || 300, SEED = +process.argv[3] || 1;
         if (sa.x - sa.hw < R.x0 - .01 || sa.x + sa.hw > R.x1 + .01 || sa.z - sa.hd < R.z0 - .01 || sa.z + sa.hd > R.z1 + .01) why.push(`${a.pid} outside the room`);
         doc.items.slice(i + 1).forEach(b => { if (I.overlaps(sa, I.shapeOf(b))) why.push(`${a.pid} overlaps ${b.pid}`); });
         if (I.P(a.pid).mount === 'floor') { const f = I.featureHit(sa, true); if (f && f.f.kind === 'door') why.push(`${a.pid} blocks the door`); }
+        // 5. a fridge, tall unit or dishwasher must be reachable: 60 cm in front of it free of other floor units
+        if (['fridge', 'tall', 'dishwasher'].includes(a.pid) && a.wall) {
+          const n = { N: [0, 1], S: [0, -1], W: [1, 0], E: [-1, 0] }[a.wall], depth = .6;
+          const zone = { x: sa.x + n[0] * ((n[0] ? sa.hw : 0) + depth / 2), z: sa.z + n[1] * ((n[1] ? sa.hd : 0) + depth / 2), hw: n[0] ? depth / 2 : sa.hw - .02, hd: n[1] ? depth / 2 : sa.hd - .02 };
+          const blocker = doc.items.find(b => b !== a && I.P(b.pid).mount === 'floor' && (s => Math.abs(s.x - zone.x) < s.hw + zone.hw - .02 && Math.abs(s.z - zone.z) < s.hd + zone.hd - .02)(I.shapeOf(b)));
+          if (blocker) why.push(`${a.pid} blocked by ${blocker.pid}`);
+        }
       });
       S.room = keepRoom; S.items = keepItems;
       if (why.length) failures.push({ c, why: [...new Set(why)].join('; '), issues: doc.ai.issues, kdl });
@@ -63,7 +71,7 @@ const N = +process.argv[2] || 300, SEED = +process.argv[3] || 1;
   const { failures, stats } = out;
   console.log(`${stats.cases} designs realized · ${(stats.adjustments / Math.max(1, stats.cases)).toFixed(1)} auto-adjustments per design on average`);
   if (errors.length) console.log('page errors:', errors);
-  if (!failures.length) { console.log(`PASS · all ${N} random designs keep sink, hob, fridge and chimney; no overlaps, nothing outside the room or in a doorway`); }
+  if (!failures.length) { console.log(`PASS · all ${N} random designs keep sink, hob, fridge and chimney; no overlaps, nothing outside the room or in a doorway; fridges and tall units reachable`); }
   else {
     const by = {}; failures.forEach(f => f.why.split('; ').forEach(w => { by[w.replace(/\w+-\w+|\b[a-z]+-unit\b/g, m => m)] = (by[w] || 0) + 1; }));
     console.log(`FAIL · ${failures.length} of ${N} designs broke a rule`); console.log(by);

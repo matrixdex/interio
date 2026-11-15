@@ -2299,6 +2299,7 @@ function kdlUnit(tok) {
    neighbouring wall that swing into this run's corner) are excluded. If the run is too long: drop gaps, trim flexible
    base-cabinet widths, then drop plain base cabinets / dishwasher / tall units — sink, hob and fridge stay. Finally hob,
    fridge and tall units are shuffled out from under windows (a chimney or a tall box can't go there). */
+const NEED_FRONT = ['fridge', 'tall', 'dishwasher']; // their doors need open floor in front
 const ADJ = { N: ['E', 'W'], S: ['E', 'W'], E: ['N', 'S'], W: ['N', 'S'] }, ESSENTIAL_TOK = /^(sink|hob|fridge)/i, FLEX_W = [120, 90, 75, 60, 45, 30], DROP_ORDER = ['base-cab', 'dishwasher', 'tall'], NOT_UNDER_WINDOW = ['hob-unit', 'fridge', 'tall'];
 function runKeepOut(wall, d) {
   const W = d.room.w, D = d.room.d, L = (wall === 'N' || wall === 'S') ? W : D, out = [];
@@ -2356,14 +2357,16 @@ function fitRun(run, d, issues) {
     dropped.push(units.splice(k, 1)[0]); res = packRun(units, segs);
   }
   // keep hob / fridge / tall units out from under windows by moving them along the run
-  const bad = r => r.miss.length * 10 + r.out.filter(p => NOT_UNDER_WINDOW.includes(p.pid) && wins.some(([w0, w1]) => p.start < w1 - 1 && p.start + p.u.w > w0 + 1)).length;
-  if (wins.length && bad(res) > 0) { // whole arrangements first: window-sensitive units all at the start, or all at the end
-    const nu = units.filter(u => NOT_UNDER_WINDOW.includes(u.pid)), rest = units.filter(u => !NOT_UNDER_WINDOW.includes(u.pid));
-    for (const t of [nu.concat(rest), rest.concat(nu), rest.concat(nu.slice().reverse()), nu.slice().reverse().concat(rest)]) { const r = packRun(t, segs); if (bad(r) < bad(res)) { units.splice(0, units.length, ...t); res = r; } }
+  const bz = run.blocked || [], MOVERS = [...new Set(NOT_UNDER_WINDOW.concat(NEED_FRONT))];
+  const inZone = (p, zs) => zs.some(([a0, a1]) => p.start < a1 - 1 && p.start + p.u.w > a0 + 1);
+  const bad = r => r.miss.length * 10 + r.out.filter(p => NOT_UNDER_WINDOW.includes(p.pid) && inZone(p, wins)).length + 2 * r.out.filter(p => NEED_FRONT.includes(p.pid) && inZone(p, bz)).length;
+  if ((wins.length || bz.length) && bad(res) > 0) { // whole arrangements first: window-sensitive units all at the start, or all at the end
+    const nu = units.filter(u => MOVERS.includes(u.pid)), rest = units.filter(u => !MOVERS.includes(u.pid)), half = Math.ceil(rest.length / 2);
+    for (const t of [nu.concat(rest), rest.concat(nu), rest.concat(nu.slice().reverse()), nu.slice().reverse().concat(rest), rest.slice(0, half).concat(nu, rest.slice(half))]) { const r = packRun(t, segs); if (bad(r) < bad(res)) { units.splice(0, units.length, ...t); res = r; } }
   }
-  for (let pass = 0; pass < 3 && wins.length && bad(res) > 0; pass++) {
+  for (let pass = 0; pass < 3 && (wins.length || bz.length) && bad(res) > 0; pass++) {
     let best = null;
-    units.forEach((u, i) => { if (!NOT_UNDER_WINDOW.includes(u.pid)) return;
+    units.forEach((u, i) => { if (!MOVERS.includes(u.pid)) return;
       for (let j = 0; j < units.length; j++) { if (j === i) continue; const t = units.slice(); t.splice(j, 0, t.splice(i, 1)[0]); const r = packRun(t, segs); if (!best || bad(r) < best.s) best = { s: bad(r), t, r }; } });
     if (!best || best.s >= bad(res)) break;
     units.splice(0, units.length, ...best.t); res = best.r;
@@ -2434,6 +2437,27 @@ function realizeKDL(d) {
       issues.push(...best.tmp.filter(m => !issues.includes(m)));
     } else issues.push(`No room anywhere for the ${P(kdlUnit(tok).pid).name.toLowerCase()}.`);
   }
+  // access: where two runs meet, the run that holds the corner must not put a fridge, tall unit or dishwasher there —
+  // the other run's first cabinet would stand in front of its door. Refit with that corner off-limits for them;
+  // if the run can't be rearranged, the other run starts 60 cm later instead, leaving the door clear.
+  const cornerZones = k => { const run = d.runs[k], L = wallL(run.wall), zs = [];
+    d.runs.forEach((o, j) => { if (j === k || !ADJ[run.wall].includes(o.wall) || !fits[j] || !fits[j].length) return;
+      const oEnd = cornerAt(o.wall, run.wall), oL = wallL(o.wall), near = fits[j].filter(p => oEnd === 'start' ? p.start < 160 : p.start + p.w > oL - 160); if (!near.length) return;
+      const deep = Math.max(...near.map(p => p.dp || 60)) + 2; zs.push({ j, z: cornerAt(run.wall, o.wall) === 'start' ? [0, deep] : [L - deep, L] }); });
+    return zs; };
+  const blockedIn = (fit, zs) => fit.filter(p => NEED_FRONT.includes(p.pid) && zs.some(({ z: [a0, a1] }) => p.start < a1 - 1 && p.start + p.w > a0 + 1));
+  for (let k = 0; k < d.runs.length; k++) {
+    const zs = cornerZones(k); if (!zs.length || !blockedIn(fits[k], zs).length) continue;
+    const trial = Object.assign({}, d.runs[k], { blocked: zs.map(x => x.z) }), out = fitRun(trial, d, []);
+    if (out.miss.length <= fits[k].miss.length && blockedIn(out, zs).length < blockedIn(fits[k], zs).length) {
+      d.runs[k] = trial; fits[k] = out; issues.push(`Kept the ${WALL_NAME[trial.wall].toLowerCase()} corner for a cabinet so tall doors open freely.`);
+    }
+    for (const p of blockedIn(fits[k], zs)) { // still in a corner: push the run in front of it back
+      const zz = zs.find(({ z: [a0, a1] }) => p.start < a1 - 1 && p.start + p.w > a0 + 1), o = d.runs[zz.j], oL = wallL(o.wall), need = (p.dp || 70) + 62;
+      const t2 = Object.assign({}, o, { keep: (o.keep || []).concat([cornerAt(o.wall, d.runs[k].wall) === 'start' ? [0, need] : [oL - need, oL]]) }), o2 = fitRun(t2, d, []);
+      if (o2.miss.length <= fits[zz.j].miss.length) { d.runs[zz.j] = t2; fits[zz.j] = o2; issues.push(`Left floor space in front of the ${P(p.pid).name.toLowerCase()} so its door opens.`); }
+    }
+  }
   d.runs.forEach((run, k) => { for (const pl of fits[k]) items.push(mk(pl.pid, pl.cfg, { mode: 'wall', wall: run.wall, start_cm: pl.start })); });
   for (const isl of d.islands) {
     const units = isl.units.map(kdlUnit).filter(u => u && u.pid), widths = units.map(u => Math.round(dimsOf(P(u.pid), Object.assign(defCfg(P(u.pid)), u.cfg)).w * 100));
@@ -2466,6 +2490,33 @@ function controlLayer({ adds, chimStyle, fin, issues }) {
     const want = (spec0 => spec0 ? spec0.options : {})(null), it = tmpItem(pid, want), sh = findSlot(it, null);
     if (sh && !featureHit(sh, true)) { sh._tmp = it; if (place(pid, null, sh)) { issues.push(`Placed the ${P(pid).name.toLowerCase()} where there was room — the design's own spot didn't work.`); continue; } }
     issues.push(`There is no room for the ${P(pid).name.toLowerCase()} in this room.`);
+  }
+  // 0b · access: a fridge, tall unit or dishwasher may stand in a corner, but the 60 cm in front of its door stays clear.
+  //      A plain cabinet (or stool) in the way gives way; a tall unit or dishwasher gives way to a sink, hob or fridge;
+  //      a fridge facing a sink or hob moves to a slot that has clear floor in front.
+  const frontZone = a => { const sa = shapeOf(a), n = { N: [0, 1], S: [0, -1], W: [1, 0], E: [-1, 0] }[a.wall], dep = .6;
+    return { x: sa.x + n[0] * ((n[0] ? sa.hw : 0) + dep / 2), z: sa.z + n[1] * ((n[1] ? sa.hd : 0) + dep / 2), hw: n[0] ? dep / 2 : sa.hw - .02, hd: n[1] ? dep / 2 : sa.hd - .02 }; };
+  const inZone = (zn, sh) => Math.abs(sh.x - zn.x) < sh.hw + zn.hw - .02 && Math.abs(sh.z - zn.z) < sh.hd + zn.hd - .02;
+  const essentialUnit = o => ['sink', 'stove'].includes(P(o.pid).essential) || o.pid === 'fridge';
+  const drop = o => { const i = S.items.indexOf(o); if (i >= 0) S.items.splice(i, 1); };
+  for (let pass = 0; pass < 3; pass++) {
+    let changed = false;
+    for (const a of S.items.filter(i => NEED_FRONT.includes(i.pid) && i.wall)) {
+      if (!S.items.includes(a)) continue;
+      const blockers = S.items.filter(o => o !== a && P(o.pid).mount === 'floor' && inZone(frontZone(a), shapeOf(o)));
+      for (const o of blockers) {
+        if (!essentialUnit(o)) { drop(o); changed = true; issues.push(`Took out the ${P(o.pid).name.toLowerCase()} in front of the ${P(a.pid).name.toLowerCase()} so its door opens.`); continue; }
+        if (a.pid !== 'fridge') { drop(a); changed = true; issues.push(`Left out a ${P(a.pid).name.toLowerCase()} whose door would face the ${P(o.pid).name.toLowerCase()}.`); break; }
+        // a fridge facing a sink or hob: find it a slot with clear floor in front
+        const keep = { x: a.x, z: a.z, rot: a.rot, wall: a.wall }; drop(a);
+        const sh = findSlot(a, null); let moved = false;
+        if (sh && !featureHit(sh, true)) { applyShape(a, sh); if (a.wall && !S.items.some(q => P(q.pid).mount === 'floor' && inZone(frontZone(a), shapeOf(q)))) moved = true; }
+        if (!moved) Object.assign(a, keep); S.items.push(a);
+        if (moved) { changed = true; issues.push('Moved the refrigerator to where its door can open.'); }
+        break;
+      }
+    }
+    if (!changed) break;
   }
   const floor = S.items.filter(i => i.wall && P(i.pid).mount === 'floor');
   // 1 · a chimney over every hob, same width when possible
@@ -2512,7 +2563,7 @@ function controlLayer({ adds, chimStyle, fin, issues }) {
       const faces = isl[0].rot, back = faces === 180 ? 1 : faces === 0 ? -1 : 0, alongX = faces === 0 || faces === 180;
       for (let k = 0; k < n; k++) {
         const t = (k + .5) / n, it = tmpItem('stool', {}), x = alongX ? x0 + (x1 - x0) * t : (faces === 90 ? x0 - .35 : x1 + .35), z = alongX ? (back > 0 ? z1 + .35 : z0 - .35) : z0 + (z1 - z0) * t;
-        const sh = shapeOf(it, x, z, 0); sh._tmp = it; place('stool', null, sh);
+        const sh = shapeOf(it, x, z, 0); sh._tmp = it; if (S.items.some(a => NEED_FRONT.includes(a.pid) && a.wall && inZone(frontZone(a), sh))) continue; place('stool', null, sh);
       }
     }
   }
