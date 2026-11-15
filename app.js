@@ -923,7 +923,7 @@ function copyItem(it) {
   }
   if (!sh) sh = findSlot(c, { x: it.x, z: it.z });
   if (!sh) return toast('No free space for a copy.');
-  applyShape(c, sh); S.items.push(c); attachItem(c); select(c); afterChange(); toast('Copy added next to it.');
+  applyShape(c, sh); S.items.push(c); attachItem(c); select(c); afterChange();
 }
 function setVariant(it, vi) { it.v = vi; rebuildItem(it); afterChange({ keepPanel: false }); }
 function setCfg(it, key, val) {
@@ -941,7 +941,7 @@ function replaceItem(it, pid) {
   let sh = it.wall ? wallPlace(tmp, it.wall, alongAxis(it.wall) === 'x' ? it.x : it.z) : shapeOf(tmp);
   if (collides(sh, it) || (p.mount === 'wall') !== (P(it.pid).mount === 'wall')) sh = findSlot(Object.assign(tmp, { uid: 'tmp' }), { x: it.x, z: it.z });
   if (!sh || collides(sh, it)) return toast('The replacement would not fit here.');
-  detachItem(it); Object.assign(it, { pid, v: tmp.v, cfg: tmp.cfg }); applyShape(it, sh); attachItem(it); S.itemTab = 'details'; afterChange(); toast(`Swapped to ${p.name}.`);
+  detachItem(it); Object.assign(it, { pid, v: tmp.v, cfg: tmp.cfg }); applyShape(it, sh); attachItem(it); S.itemTab = 'details'; afterChange();
 }
 let rotToastAt = 0;
 function setRotation(it, d) {
@@ -1206,7 +1206,6 @@ function dropProduct(p, ev) {
   const sh = placeShape(it, g.x, g.z) || findSlot(it, { x: g.x, z: g.z });
   if (!sh) return toast(`No room for the ${p.name.toLowerCase()} there.`);
   applyShape(it, sh); S.items.push(it); attachItem(it); select(it); afterChange({ keepPanel: false });
-  toast(`Added the ${p.name.toLowerCase()} where you dropped it.`);
 }
 
 /* ═══════════════ 7 · render pipeline & overlays ═══════════════ */
@@ -1389,7 +1388,7 @@ function maybeFeedback() {
   if (S.feedbackShown || S.actions < 9) return; S.feedbackShown = true;
   setTimeout(() => {
     let c; c = modal(h('div', null, h('h3', null, 'How is your design experience?'), h('p', { class: 'muted' }, "We'd love to hear any ideas on how this could be better…"),
-      h('div', { class: 'emoji' }, ['😞', '🙁', '😐', '🙂', '😀'].map((e, i) => h('button', { 'aria-label': ['Bad', 'Poor', 'Okay', 'Good', 'Great'][i], onclick: () => { c(); toast('Thanks for the feedback!'); } }, e))),
+      h('div', { class: 'emoji' }, ['😞', '🙁', '😐', '🙂', '😀'].map((e, i) => h('button', { 'aria-label': ['Bad', 'Poor', 'Okay', 'Good', 'Great'][i], onclick: () => { c(); } }, e))),
       h('div', { style: 'display:flex;justify-content:space-between;color:var(--muted);font-size:12px;padding:0 12px' }, h('span', null, 'Bad'), h('span', null, 'Good'))));
   }, 600);
 }
@@ -1400,7 +1399,7 @@ function toast(msg, act) {
   t.append(h('button', { class: 'x', 'aria-label': 'Dismiss', html: ico('close', 16), onclick: () => { t.hidden = true; } }));
   t.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; }, 6000);
 }
-const toastAdded = it => toast('Your item has been added, but you might want to move it to a better spot', { action: 'Select it', fn: () => select(it) });
+const toastAdded = () => {}; // no confirmation popups: the new unit is visible in the room
 
 /* warnings drawer */
 const TIPS = ['Keep the sink, stove and fridge in a work triangle of 3.6–7.9 m.', 'Mount the chimney 65–75 cm above the hob, directly over it.', 'Leave at least 30 cm of counter between the sink and the hob.', 'Drag a cabinet near a wall and it snaps flush; units snap to each other\'s edges.', 'Counter-top appliances ride along when you move the cabinet under them.', 'Use Finishes to change every shutter, the countertop, handles and wall tiles at once.'];
@@ -1499,7 +1498,6 @@ function applyStyle(id) {
   editPush();
   for (const t of targets) { t.style = id; t.w = st.w; t.h = st.h; t.sill = st.sill || 0; const L = wallLen(t.wall); t.u = clamp(t.u, t.w / 2 + .1, L - t.w / 2 - .1); }
   buildRoom(); renderPanel(true); positionOverlay(); updateEditUI();
-  if (targets.length > 1) toast(`Applied "${st.name}" to all ${st.kind}s. Select one first to change just that ${st.kind}.`);
 }
 function renderWizard(root) {
   const E = S.edit, R = S.room;
@@ -1790,7 +1788,7 @@ const linePrice = l => { const p = P(l.pid); return p.price(l.cfg || defCfg(p), 
 const lineDesc = l => { const p = P(l.pid); return p.desc(l.cfg || defCfg(p), p.variants[l.v] || p.variants[0]); };
 function addToBag(lines) {
   for (const l of lines) { const ex = S.bag.find(b => lineKey(b) === lineKey(l)); ex ? ex.qty += l.qty : S.bag.push({ pid: l.pid, v: l.v, cfg: l.cfg, qty: l.qty }); }
-  store.set('bag', S.bag); updateBagCount(); toast(`${lines.length > 1 ? lines.length + ' items' : P(lines[0].pid).name} added to your bag.`, { action: 'View bag', fn: showBag });
+  store.set('bag', S.bag); updateBagCount();
   if (S.sel) renderPanel(true);
 }
 function showBag() {
@@ -1841,7 +1839,6 @@ function exitEdit(commit) {
   }
   const pv = S.edit.prevView; S.mode = 'design'; S.edit = null; S.view = pv;
   buildRoom(); fitCamera(); updateCamera(); S.autoFrame = true; requestAnimationFrame(() => resize()); renderBottomBar(); renderPanel(); refreshTotals(); refreshWarnings(); queueSave(); markDirty(); positionOverlay();
-  if (commit) toast('Kitchen updated.');
 }
 function editUndo() { if (!S.edit.undo.length) return; S.edit.redo.push(JSON.stringify(S.room)); S.room = JSON.parse(S.edit.undo.pop()); S.edit.feat = null; reflowItems(); buildRoom(); updateEditUI(); renderPanel(true); }
 function editRedo() { if (!S.edit.redo.length) return; S.edit.undo.push(JSON.stringify(S.room)); S.room = JSON.parse(S.edit.redo.pop()); S.edit.feat = null; reflowItems(); buildRoom(); updateEditUI(); renderPanel(true); }
@@ -2143,7 +2140,7 @@ function showAISettings(onSaved) {
   close = modal(h('div', null, h('h3', null, 'Connect the AI designer'), seg, panes.bridge, panes.api, panes.manual,
     h('div', { style: 'display:grid;grid-template-columns:1fr 1fr;gap:12px' }, h('label', { class: 'lab' }, 'Model', model), h('label', { class: 'lab' }, 'Thinking effort', effort)),
     msg, h('div', { class: 'actions' }, test,
-      h('button', { class: 'pill-btn primary', onclick: () => { AI.cfg = Object.assign(AI.cfg, read()); store.set('ai', AI.cfg); close(); toast(aiReady() ? `AI designer: ${AI_MODE_NAME[aiMode()]}.` : 'AI settings saved.'); if (onSaved) onSaved(); } }, 'Save'))));
+      h('button', { class: 'pill-btn primary', onclick: () => { AI.cfg = Object.assign(AI.cfg, read()); store.set('ai', AI.cfg); close(); if (onSaved) onSaved(); } }, 'Save'))));
   draw();
 }
 
@@ -3121,7 +3118,7 @@ async function tbDesign(brief) {
     const text = await aiText(kdlSystem(), `${room}\nRequest: ${brief}`, null, { effort: 'low', maxTokens: 1500 }), doc = kdlToDoc(text, {});
     if (viewGen.stopped) return; // stopped: a late reply is ignored
     TB.undo.push(JSON.stringify(currentDoc())); doc.id = S.designId; tbRestore(doc); S.tab = 'ai'; renderPanel(); queueSave();
-    pend.remove(); tbSay('bot', `✓ New design “${doc.title}” in ${((Date.now() - t0) / 1000).toFixed(0)} s. Say “undo” to go back.`);
+    pend.remove(); // the new design on the stage says it all
   } catch (e) { pend.remove(); const m = aiErrorText(e); if (!/^cancelled/i.test(m)) tbSay('bot', m, 'bad'); }
   TB.busy = false; viewGen(false);
 }
@@ -3158,7 +3155,7 @@ function init() {
   $('#design-title').addEventListener('input', e => { S.title = e.target.value; queueSave(); });
   $('#btn-bag').onclick = $('#hdr-bag').onclick = showBag;
   $('#btn-share').onclick = () => { saveNow(); const url = location.href; (navigator.clipboard ? navigator.clipboard.writeText(url) : Promise.reject()).then(() => toast('Link copied. Designs are stored in this browser.'), () => toast('Copy this link: ' + url)); };
-  $('#btn-save').onclick = () => { saveNow(); toast('Design saved in this browser.'); };
+  $('#btn-save').onclick = () => { saveNow(); };
   $('#btn-summary').onclick = showSummary;
   $('#btn-exit').onclick = () => { saveNow(); location.hash = ''; };
   $('#zoom-in').onclick = () => zoomBy(1); $('#zoom-out').onclick = () => zoomBy(-1);
