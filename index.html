@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Interio — Kitchen Atelier</title>
 <meta name="description" content="Interio — a studio where kitchens are composed like a game and built from real modules.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -20,6 +20,21 @@
     <button class="icon-btn" id="hdr-bag" aria-label="Shopping bag"><span data-ico="bag"></span><b class="badge" id="hdr-bag-count" hidden>0</b></button>
   </div>
 </header>
+
+<!-- phones: one bar that opens the kitchen menu (designs · new empty · GenAI · options) -->
+<div id="mbar" class="mbar">
+  <div class="mbar-row">
+    <a class="mbar-brand" href="#" aria-label="Interio home"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span></a>
+    <button id="mbar-toggle" class="mbar-toggle" aria-expanded="false" aria-controls="mbar-body"><span id="mbar-title">Interio</span><svg class="chev" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M3 6l5 5 5-5" fill="none" stroke="currentColor" stroke-width="1.4"/></svg></button>
+    <button id="mbar-claude" class="claude-pill" title="Claude connection"><i class="dot" aria-hidden="true"></i></button>
+  </div>
+  <div id="mbar-body" class="mbar-body" hidden>
+    <div id="mbar-designs" class="mbar-designs"></div>
+    <div class="mbar-actions"><button type="button" id="m-empty" class="pill-btn">New Empty Kitchen</button><button type="button" id="m-gen" class="pill-btn primary">GenAI Kitchen</button></div>
+    <button type="button" id="m-opts-toggle" class="mbar-sub" aria-expanded="false" aria-controls="m-opts">Options<svg class="chev" viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M3 6l5 5 5-5" fill="none" stroke="currentColor" stroke-width="1.4"/></svg></button>
+    <div id="m-opts" class="m-opts" hidden></div>
+  </div>
+</div>
 
 <!-- ───────────── HUB: one screen — the brief on the left, the result on the right ───────────── -->
 <main id="hub">
@@ -126,6 +141,10 @@
     <div id="popover-root"></div>
   </section>
 </div>
+
+<!-- phones: the chatbox and the footer sit under the stage -->
+<div id="mchat" class="mchat"></div>
+<nav id="mfoot" class="mfoot" aria-label="More"><button data-m="saved" hidden>Saved</button><button data-m="collection">Collection</button><a href="how-it-works.html">How it works</a><a href="how-to-use.html">How to use</a></nav>
 
 <div id="modal-root"></div>
 <div id="cookie" hidden><p>Your kitchens stay in this browser.</p><button class="pill-btn sm" id="cookie-ok">OK</button><button id="cookie-set" hidden></button></div>

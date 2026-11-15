@@ -621,7 +621,9 @@ function resize() {
   GL.vw = w; GL.vh = hh; GL.renderer.setSize(w, hh, false);
   for (const c of [GL.persp, GL.inside]) { c.aspect = w / hh; c.updateProjectionMatrix(); }
   $('#dims').setAttribute('viewBox', `0 0 ${w} ${hh}`);
-  updateCamera(); markDirty();
+  updateCamera();
+  if (S.autoFrame && w > 50 && hh > 50 && S.view === 'dollhouse') { S.autoFrame = false; if (w < hh) frameRoomInView(); }
+  markDirty();
 }
 
 /* camera rigs */
@@ -896,7 +898,7 @@ function afterChange(opts = {}) {
   refreshTotals(); refreshWarnings(); refreshTiles(); positionOverlay(); markDirty(); queueSave();
   if (!opts.quiet) { S.actions++; maybeFeedback(); }
   if (S.stripOpen) S.stripDirty = true;
-  if (!opts.keepPanel) renderPanel();
+  if (!opts.keepPanel) renderPanel(); else refreshAIPlan();
 }
 function addItem(pid, opts = {}) {
   const p = P(pid); if (!p) return null;
@@ -1072,7 +1074,7 @@ function bindCanvas() {
     if (DRAG.mode === 'item') dragItem(e);
     else if (DRAG.mode === 'feat') dragFeature(e);
     else if (DRAG.mode === 'cam') {
-      if (S.view === 'dollhouse') { CAM.az = DRAG.az - dx * .4; CAM.el = clamp(DRAG.el + dy * .3, 8, 86); }
+      if (S.view === 'dollhouse') { const soft = e.pointerType === 'touch' && isMobile(); CAM.az = DRAG.az - dx * (soft ? .22 : .4); CAM.el = clamp(DRAG.el + dy * (soft ? .12 : .3), 8, 86); }
       else if (S.view === 'top') { const k = topViewHeight() / GL.vh; CAM.px = DRAG.px - dx * k; CAM.pz = DRAG.pz - dy * k; }
       else { CAM.yaw = clamp(DRAG.yaw - dx * .18, -80, 80); CAM.pitch = clamp(DRAG.pitch - dy * .12, -30, 30); }
       updateCamera(); markDirty(); positionOverlay();
@@ -1113,7 +1115,7 @@ function bindCanvas() {
   }, { passive: false });
   let gScale = 1; // Safari trackpad pinch
   cv.addEventListener('gesturestart', e => { e.preventDefault(); gScale = e.scale || 1; });
-  cv.addEventListener('gesturechange', e => { e.preventDefault(); const r = (e.scale || 1) / gScale; gScale = e.scale || 1; zoomScale(Math.pow(1 / r, ZOOM_SENS.gesture)); });
+  cv.addEventListener('gesturechange', e => { e.preventDefault(); const r = (e.scale || 1) / gScale; gScale = e.scale || 1; if (PTR.size >= 2) return; zoomScale(Math.pow(1 / r, ZOOM_SENS.gesture)); });
   cv.addEventListener('gestureend', e => e.preventDefault());
 }
 /* two-finger gestures */
@@ -1125,6 +1127,10 @@ function startGesture() {
 }
 function moveGesture() {
   const g = gestureState(), p = GESTURE;
+  if (isMobile()) {
+    const r = p.d / g.d; if (Math.abs(1 - r) < .012) return; // too small to be a pinch: keep the reference, wait
+    zoomScale(clamp(Math.pow(r, .8), .9, 1.1)); GESTURE = g; updateCamera(); markDirty(); positionOverlay(); return;
+  }
   zoomScale(clamp(p.d / g.d, .8, 1.25));
   const dx = g.mx - p.mx, dy = g.my - p.my;
   if (S.view === 'top') { const k = topViewHeight() / GL.vh; CAM.px -= dx * k; CAM.pz -= dy * k; }
@@ -1500,7 +1506,7 @@ function renderWizard(root) {
   const sc = h('div', { class: 'wiz' }); root.append(sc);
   const foot = h('div', { class: 'wfoot' }); root.append(foot);
   if (E.step === 1) {
-    sc.append(h('div', { class: 'step' }, 'Step 1 of 3'), h('h2', null, 'Edit room dimensions'),
+    sc.append(h('h2', null, 'Edit room dimensions'),
       h('p', null, E.sub === 'plan' ? 'Click and drag each wall to adjust the dimensions of your floor plan. Toggle to ceiling height. Click and drag the top of the walls up or down to adjust their height.' : 'Drag the handle at the top of the walls up or down — or use the slider — to set the ceiling height.'),
       h('div', { class: 'illus', html: `<svg viewBox="0 0 220 80" width="100%" height="80"><rect x="70" y="10" width="80" height="60" fill="#fff" stroke="#222" stroke-width="2"/><path d="M30 40h30M45 30l-15 10 15 10M190 40h-30M175 30l15 10-15 10" stroke="#0058a3" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>` }),
       h('div', { class: 'featbox' }, h('div', { class: 'row' }, 'Width', h('b', { id: 'dimw' })), h('div', { class: 'row' }, 'Depth', h('b', { id: 'dimd' })), h('div', { class: 'row' }, 'Ceiling height', h('b', { id: 'dimh' })),
@@ -1508,7 +1514,7 @@ function renderWizard(root) {
           oninput: e => { R.h = +e.target.value; buildRoom(); updateEditUI(); }, onpointerdown: () => editPush(), onchange: () => { updateEditUI(); } })));
     foot.append(h('button', { class: 'pill-btn dark', onclick: wizNext }, 'Next'));
   } else if (E.step === 2) {
-    sc.append(h('div', { class: 'step' }, 'Step 2 of 3'), h('h2', null, 'Configure room features'), h('p', null, 'Swap doors and windows. Select them to adjust dimensions and move them to the right position.'));
+    sc.append(h('h2', null, 'Configure room features'), h('p', null, 'Swap doors and windows. Select them to adjust dimensions and move them to the right position.'));
     if (E.feat) {
       const f = E.feat, L = wallLen(f.wall), step = (key, d, lo, hi) => { editPush(); f[key] = clamp(+(f[key] + d).toFixed(2), lo, hi); f.u = clamp(f.u, f.w / 2 + .1, L - f.w / 2 - .1); buildRoom(); renderPanel(true); positionOverlay(); updateEditUI(); };
       sc.append(h('div', { class: 'featbox' }, h('b', null, `Selected: ${STYLE[f.style].name}`), h('div', { class: 'muted' }, `${WALL_NAME[f.wall]} — drag it in the room to slide it along the wall.`),
@@ -1521,7 +1527,7 @@ function renderWizard(root) {
     foot.append(h('button', { class: 'pill-btn', onclick: wizBack }, 'Go back'), h('button', { class: 'pill-btn dark', onclick: wizNext }, 'Next'));
   } else {
     const fl = FLOOR(R.floor);
-    sc.append(h('div', { class: 'step' }, 'Step 3 of 3'), h('h2', null, 'Style the walls and flooring'), h('p', null, 'Choose a wall color and floor material to personalize your room.'),
+    sc.append(h('h2', null, 'Style the walls and flooring'), h('p', null, 'Choose a wall color and floor material to personalize your room.'),
       h('h4', null, 'Wall color'),
       h('div', { class: 'sgrid' }, WALL_COLORS.map(c => h('button', { class: R.wall === c ? 'on' : '', style: `background:${c}`, title: c, 'aria-label': 'Wall color ' + c, onclick: () => { if (R.wall === c) return; editPush(); R.wall = c; buildRoom(); renderPanel(true); updateEditUI(); } }))),
       h('h4', null, 'Floor style', h('span', { class: 'muted', style: 'font-weight:400' }, ' — ' + fl.name)),
@@ -1550,7 +1556,7 @@ function route() {
 }
 function showDesigner() {
   S.route = 'designer'; $('#hub').hidden = true; $('#designer').hidden = false; document.title = 'Studio — Interio';
-  if (!TH.r && !TH.failed) thumbInit(); resize(); markDirty();
+  if (!TH.r && !TH.failed) thumbInit(); resize(); markDirty(); mbarOpen(false); setTimeout(renderMbar, 0);
 }
 function showHub() {
   if (S.route === 'designer') saveNow();
@@ -1834,7 +1840,7 @@ function exitEdit(commit) {
     history.replaceState(null, '', `#${S.templateId}/${S.designId}`);
   }
   const pv = S.edit.prevView; S.mode = 'design'; S.edit = null; S.view = pv;
-  buildRoom(); fitCamera(); updateCamera(); renderBottomBar(); renderPanel(); refreshTotals(); refreshWarnings(); queueSave(); markDirty(); positionOverlay();
+  buildRoom(); fitCamera(); updateCamera(); S.autoFrame = true; requestAnimationFrame(() => resize()); renderBottomBar(); renderPanel(); refreshTotals(); refreshWarnings(); queueSave(); markDirty(); positionOverlay();
   if (commit) toast('Kitchen updated.');
 }
 function editUndo() { if (!S.edit.undo.length) return; S.edit.redo.push(JSON.stringify(S.room)); S.room = JSON.parse(S.edit.undo.pop()); S.edit.feat = null; reflowItems(); buildRoom(); updateEditUI(); renderPanel(true); }
@@ -1852,8 +1858,14 @@ function startDesign(doc) {
   S.mode = 'design'; S.edit = null; S.view = 'dollhouse'; S.sel = null; S.tab = 'ai'; S.cat = null; S.query = ''; S.menu = null; S.stripOpen = false; S.rotating = false; S.actions = 0;
   GL.itemGroup.children.slice().forEach(c => { GL.itemGroup.remove(c); disposeTree(c); }); S.items = [];
   for (const d of doc.items || []) { const p = P(d.pid); if (!p) continue; const it = { uid: uid(), pid: d.pid, v: d.v || 0, cfg: Object.assign(defCfg(p), d.cfg || {}), x: d.x, z: d.z, rot: d.rot || 0, wall: d.wall ?? null, purpose: d.purpose || '' }; S.items.push(it); attachItem(it); }
-  $('#design-title').value = S.title; toggleStrip(false); closePopovers();
-  buildRoom(); fitCamera(); updateCamera(); renderBottomBar(); renderPanel(); refreshTotals(); refreshWarnings(); renderItemFloat(); updateBagCount(); markDirty();
+  $('#design-title').value = S.title; toggleStrip(false); closePopovers(); setTimeout(renderMbar, 0);
+  buildRoom(); fitCamera(); updateCamera(); S.autoFrame = true; requestAnimationFrame(() => resize()); renderBottomBar(); renderPanel(); refreshTotals(); refreshWarnings(); renderItemFloat(); updateBagCount(); markDirty();
+}
+/* tall screens (phones): pull the dollhouse camera back until the whole room is in view */
+function frameRoomInView() {
+  const R = S.room; if (!R) return; const cs = []; for (const x of [R.x0, R.x1]) for (const y of [0, R.h]) for (const z of [R.z0, R.z1]) cs.push(new THREE.Vector3(x, y, z));
+  for (let k = 0; k < 6; k++) { const m = Math.max(...cs.map(v => { const q = v.clone().project(GL.cam); return Math.max(Math.abs(q.x), Math.abs(q.y)); })); CAM.dist = clamp(CAM.dist * m / .92, CAM.minD, CAM.maxD); updateCamera(); }
+  markDirty();
 }
 function openTemplate(tid, did) {
   if (tid !== 'custom') return false;
@@ -1890,7 +1902,7 @@ function roomCard(name, R, tid, opts = {}) {
 const savedDocs = () => Object.values(docs()).filter(d => d && d.room && d.kitchen).sort((a, b) => b.updated - a.updated);
 function updateHubFoot() { const b = $('#open-saved'), n = savedDocs().length; if (!b) return; b.hidden = !n; $('#saved-count').textContent = n; }
 function updateClaudePill() { const p = $('#hdr-ai'); if (!p) return; const on = aiReady(); p.classList.toggle('on', on); p.title = on ? `Claude · ${AI_MODE_NAME[aiMode()]}` : 'Connect Claude for new designs'; }
-function renderHub() { renderBrief(); renderResults(); updateHubFoot(); updateClaudePill(); hydrateIcons($('#hub')); }
+function renderHub() { renderBrief(); renderResults(); updateHubFoot(); updateClaudePill(); renderMbar(); if (typeof mbarOpen === 'function') mbarOpen(isMobile()); hydrateIcons($('#hub')); }
 const fmtHub = R => `${(R.x1 - R.x0).toFixed(1)} × ${(R.z1 - R.z0).toFixed(1)} m`;
 /* hero: an axonometric drawing of a kitchen being "printed" module by module — each one rises from its footprint
    under a brass print line, then gets its part code. Loops; static (fully printed) when motion is reduced. */
@@ -2177,7 +2189,12 @@ function renderBrief() {
       h('div', { class: 'f-aux' }, h('button', { type: 'button', class: 'aux', id: 'way-build', onclick: startBuild }, 'Empty room'), clear)));
   clear.hidden = !briefUsed(b);
 }
-function openDoc(doc) { const d = docs(), copy = JSON.parse(JSON.stringify(doc)); copy.id = uid(); copy.updated = Date.now(); d[copy.id] = copy; store.set('designs', d); location.hash = `#ai/${copy.id}`; }
+function openDoc(doc) {
+  const d = docs(), map = store.get('opened', {});
+  if (map[doc.id] && d[map[doc.id]]) { location.hash = `#${d[map[doc.id]].templateId || 'ai'}/${map[doc.id]}`; return; }
+  const copy = JSON.parse(JSON.stringify(doc)); copy.id = uid(); copy.updated = Date.now(); d[copy.id] = copy; store.set('designs', d);
+  map[doc.id] = copy.id; const keys = Object.keys(map); if (keys.length > 60) delete map[keys[0]]; store.set('opened', map); location.hash = `#ai/${copy.id}`;
+}
 
 /* ── planner: the AI tab (explain, ask for changes, undo) ── */
 
@@ -2593,7 +2610,9 @@ function genRotate(on, el) {
 async function generateProposals(b) {
   const st = $('#ai-brief-status'); st.textContent = '';
   if (!aiReady()) { // free: compose from the collection, fitted to this room
-    const results = composeFromCollection(b, 3); store.set('gen', { at: Date.now(), results, free: true }); renderResults(); return;
+    const results = composeFromCollection(b, 3); store.set('gen', { at: Date.now(), results, free: true }); renderResults(); renderMbar();
+    if (isMobile() && results.length) openDoc(results[0]);
+    return;
   }
   if (AI.busy) return; AI.busy = true;
   const n = aiMode() === 'manual' ? 1 : 3, results = [];
@@ -2607,6 +2626,7 @@ async function generateProposals(b) {
   const settled = await Promise.allSettled(jobs);
   AI.busy = false; GEN.busy = false; GEN.drawing = false; HERO.loop = false; clearInterval(GEN.timer); genRotate(false);
   const fails = settled.filter(s => s.status === 'rejected').map(s => aiErrorText(s.reason));
+  if (isMobile() && results.length && S.route === 'hub') { renderMbar(); openDoc(results[0]); }
   if (fails.length && !/^cancelled/i.test(fails[0])) st.textContent = fails.length === n ? fails[0] : `${n - fails.length} of ${n} designs arrived. ${fails[0]}`;
   renderResults();
 }
@@ -2676,7 +2696,7 @@ function renderResults() {
   const any = list.length > 0;
   sec.hidden = !any; fig.hidden = any; gv.hidden = true;
   grid.innerHTML = '';
-  if (!any) { drawHero(); return; }
+  if (!any || isMobile()) { drawHero(); if (!any) return; }
   const cols = GEN.busy ? Math.max(GEN.n, list.length) : list.length; grid.style.setProperty('--cols', cols);
   list.forEach((doc, i) => grid.append(planColumn(doc, () => openDoc(doc), i)));
   for (let i = list.length; i < cols; i++) grid.append(pendingColumn());
@@ -2734,18 +2754,60 @@ function installSprings() {
 }
 
 
-/* ── planner AI tab: what the AI designed, regenerate, and how to steer it by typing ── */
+/* ── the studio's left side: the kitchen itself — its name, its description, its plan (live) ── */
 function renderAITab(sc) {
   const ai = S.ai || {}, box = h('div', { class: 'psec aitab' }); sc.append(box);
-  if (S.ai) box.append(h('div', { class: 'ai-card' }, h('small', { class: 'muted' }, `AI design · ${ai.layout_type || ''}`), h('h3', null, S.title), ai.concept ? h('p', null, ai.concept) : null,
-    ai.highlights && ai.highlights.length ? h('ul', { class: 'hl' }, ai.highlights.map(x => h('li', null, x))) : null,
-    ai.issues && ai.issues.length ? h('details', { class: 'ai-issues' }, h('summary', null, `${ai.issues.length} placement adjustment${ai.issues.length > 1 ? 's' : ''} by the planner`), h('ul', null, ai.issues.map(x => h('li', null, x)))) : null,
-    ai.kdl ? h('details', null, h('summary', null, 'Design source (KDL)'), h('pre', { class: 'cmd' }, ai.kdl)) : null));
-  else box.append(h('div', { class: 'ai-card' }, h('h3', null, 'Steer the design by typing'), h('p', null, 'Use the command bar at the bottom of the 3D view. Precise commands run instantly; anything else is interpreted by Claude.')));
-  box.append(h('div', { class: 'ai-card' }, h('b', null, 'Try typing'), h('ul', { class: 'hl' }, ['move the window 50 cm left', 'move the east wall out 30 cm', 'room 12x10 ft', 'lower the window 10 cm', 'make the hob 90 with 5 burners', 'add a tall pantry on the east wall', 'countertop marble, tiles moroccan dado', 'undo'].map(x => h('li', null, h('button', { class: 'linkish', onclick: () => { $('#tb-input').value = x; $('#tb-input').focus(); } }, x))))));
-  box.append(h('div', { style: 'display:flex;gap:8px;flex-wrap:wrap' },
-    aiReady() ? h('button', { class: 'pill-btn primary', onclick: () => tbDesign('A fresh design for this room in the same spirit.') }, S.items.length ? 'Design this room again' : 'Design this room with AI') : h('button', { class: 'pill-btn primary', onclick: () => showAISettings(() => renderPanel(true)) }, 'Connect Claude'),
-    h('button', { class: 'pill-btn', onclick: () => showAISettings(() => renderPanel(true)) }, 'AI settings')));
+  box.append(h('div', { class: 'ai-desc' }, h('h3', null, S.title || 'My kitchen'), ai.concept ? h('p', null, ai.concept) : null,
+    ai.highlights && ai.highlights.length ? h('ul', { class: 'hl' }, ai.highlights.map(x => h('li', null, x))) : null));
+  box.append(h('div', { id: 'ai-plan', class: 'ai-plan', 'aria-hidden': 'true', html: S.room ? planSVG(S.room, S.items) : '' }));
+  box.append(h('div', { class: 'ai-actions' }, aiReady()
+    ? h('button', { class: 'pill-btn primary', onclick: () => tbDesign('A fresh design for this room in the same spirit.') }, S.items.length ? 'Design this room again' : 'Design this room with AI')
+    : h('button', { class: 'pill-btn', onclick: () => showAISettings(() => { updateClaudePill(); renderPanel(true); }) }, 'Connect Claude')));
+}
+const refreshAIPlan = () => { const ap = document.getElementById('ai-plan'); if (ap && S.room) ap.innerHTML = planSVG(S.room, S.items); };
+
+/* ═══════════════ phones: one shell around the stage ═══════════════
+   bar (opens the menu: three designs · New Empty Kitchen · GenAI Kitchen · Options) / stage / chatbox / footer */
+const MQ = window.matchMedia('(max-width: 820px)');
+const isMobile = () => MQ.matches;
+function placeForViewport() {
+  const brief = $('#ai-brief'), tb = $('#textbot');
+  if (isMobile()) { if (brief && brief.parentElement !== $('#m-opts')) $('#m-opts').append(brief); if (tb && tb.parentElement !== $('#mchat')) $('#mchat').append(tb); }
+  else { if (brief && brief.parentElement !== $('.hub-main')) $('.hub-main').prepend(brief); if (tb && tb.parentElement !== $('#view')) $('#view').append(tb); }
+  if (S.route === 'designer') resize();
+}
+function mbarOpen(open) { const b = $('#mbar-body'), t = $('#mbar-toggle'); if (!b) return; b.hidden = !open; t.setAttribute('aria-expanded', open); $('#mbar').classList.toggle('open', open); if (S.route === 'designer') setTimeout(resize, 0); }
+function renderMbar() {
+  if (!$('#mbar')) return;
+  $('#mbar-title').textContent = S.route === 'designer' ? (S.title || 'My kitchen') : 'Interio';
+  const on = aiReady(); $('#mbar-claude').classList.toggle('on', on); $('#mbar-claude').title = on ? 'Claude connected' : 'Connect Claude';
+  const gen = store.get('gen', null), list = (gen && gen.results) || [], map = store.get('opened', {}), box = $('#mbar-designs');
+  box.innerHTML = ''; box.hidden = !list.length;
+  list.slice(0, 3).forEach(doc => {
+    const img = h('img', { alt: '', draggable: 'false' }); queueSnapshot(doc, img);
+    box.append(h('button', { class: 'mtile' + (S.route === 'designer' && map[doc.id] === S.designId ? ' on' : ''), 'aria-label': `Open ${doc.title}`, onclick: () => { mbarOpen(false); openDoc(doc); } }, h('span', { class: 'mtile-img' }, img), h('span', { class: 'mtile-name' }, doc.title)));
+  });
+  const n = savedDocs().length, sv = $('#mfoot [data-m="saved"]'); if (sv) sv.hidden = !n;
+}
+function mobileGenerate(extra) {
+  const b = Object.assign({}, BRIEF_DEFAULT, store.get('brief', {})); if (!Array.isArray(b.must)) b.must = [];
+  if (extra) b.extra = [b.extra, extra].filter(Boolean).join('. ');
+  mbarOpen(false);
+  if (S.route !== 'hub') { location.hash = ''; setTimeout(() => generateProposals(b), 60); } else generateProposals(b);
+}
+function initMobileShell() {
+  document.addEventListener('gesturestart', e => { if (isMobile()) e.preventDefault(); }, { passive: false });
+  document.addEventListener('gesturechange', e => { if (isMobile()) e.preventDefault(); }, { passive: false });
+  if (!$('#mbar')) return;
+  $('#mbar-toggle').onclick = () => mbarOpen($('#mbar-body').hidden);
+  $('#mbar-claude').onclick = () => showAISettings(() => { updateClaudePill(); renderMbar(); });
+  $('#m-empty').onclick = () => { mbarOpen(false); startBuild(); };
+  $('#m-gen').onclick = () => mobileGenerate('');
+  $('#m-opts-toggle').onclick = e => { const o = $('#m-opts'); o.hidden = !o.hidden; e.currentTarget.setAttribute('aria-expanded', !o.hidden); };
+  $('#mfoot [data-m="saved"]').onclick = e => openSaved(e.currentTarget);
+  $('#mfoot [data-m="collection"]').onclick = e => openCollection(e.currentTarget);
+  MQ.addEventListener('change', () => { placeForViewport(); renderMbar(); });
+  placeForViewport();
 }
 
 /* ═══════════════ 14 · Textbot — type to control the planner ═══════════════
@@ -3012,6 +3074,7 @@ function tbRestore(doc) { const view = S.view, cam = Object.assign({}, CAM); sta
 /* ── the loop: parse → (Claude) → execute → receipts ── */
 async function tbSubmit(text) {
   text = text.trim(); if (!text || TB.busy) return;
+  if (S.route !== 'designer') { mobileGenerate(text); return; }
   if (TB.log[TB.log.length - 1] !== text) { TB.log.push(text); if (TB.log.length > 50) TB.log.shift(); }
   tbSay('user', text);
   let cmds = null, via = 'grammar';
@@ -3068,14 +3131,14 @@ function tbSay(who, text, cls = '', chips, via, cmds) {
   const log = $('#tb-log'); if (!log) return h('div');
   const el = h('div', { class: `tb-msg ${who} ${cls}` }, h('div', { class: 'tb-text' }, text));
   if (via || cmds) el.append(h('div', { class: 'tb-meta' }, via ? `via ${via}` : '', cmds ? h('code', { title: 'Commands that ran' }, cmds.join(' · ')) : null));
-  if (chips) el.append(h('div', { class: 'tb-chips' }, chips.map(c => h('button', { class: 'pillf sm', onclick: () => { $('#tb-input').value = c; $('#tb-input').focus(); } }, c))));
+  if (chips && false) el.append(h('div', { class: 'tb-chips' }, chips.map(c => h('button', { class: 'pillf sm', onclick: () => { $('#tb-input').value = c; $('#tb-input').focus(); } }, c))));
   log.append(el); while (log.children.length > 12) log.firstChild.remove(); log.scrollTop = log.scrollHeight; $('#textbot').classList.add('open'); return el;
 }
 function initTextbot() {
   const dock = h('form', { id: 'textbot', class: 'textbot', role: 'region', 'aria-label': 'Text commands', onsubmit: e => { e.preventDefault(); const i = $('#tb-input'); const v = i.value; i.value = ''; tbSubmit(v); } },
     h('div', { id: 'tb-log', class: 'tb-log', 'aria-live': 'polite' }),
     h('div', { class: 'tb-bar' }, h('button', { type: 'button', class: 'tb-toggle', 'aria-label': 'Show or hide the conversation', onclick: () => $('#textbot').classList.toggle('open'), html: ico('list', 18) }),
-      h('input', { id: 'tb-input', class: 'tb-input', autocomplete: 'off', enterkeyhint: 'send', placeholder: 'Type a command — “move the window 50 cm left”, “room 12x10 ft”, “add a tall pantry”', 'aria-label': 'Type a command' }),
+      h('input', { id: 'tb-input', class: 'tb-input', autocomplete: 'off', enterkeyhint: 'send', placeholder: 'Type to change the kitchen', 'aria-label': 'Type a command' }),
       h('button', { type: 'submit', class: 'tb-send', 'aria-label': 'Send', html: ico('arrow', 18) })));
   $('#view').append(dock);
   dock.addEventListener('pointerdown', e => e.stopPropagation());
@@ -3090,7 +3153,7 @@ function initTextbot() {
 /* ═══════════════ 12 · wiring ═══════════════ */
 function init() {
   S.units = store.get('units', 'ft');
-  hydrateIcons(document); installSprings(); initGL(); bindCanvas(); bindRotate(); initTextbot();
+  hydrateIcons(document); installSprings(); initGL(); bindCanvas(); bindRotate(); initTextbot(); initMobileShell();
   $('#btn-sidebar').onclick = () => { S.panelOpen = !S.panelOpen; $('#designer').classList.toggle('panel-closed', !S.panelOpen); $('#btn-sidebar').setAttribute('aria-label', S.panelOpen ? 'Close side panel' : 'Open side panel'); setTimeout(resize, 230); };
   $('#design-title').addEventListener('input', e => { S.title = e.target.value; queueSave(); });
   $('#btn-bag').onclick = $('#hdr-bag').onclick = showBag;
