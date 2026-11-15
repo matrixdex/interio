@@ -7,20 +7,35 @@ On a desktop the app is one screen. On the left is a short brief where every fie
 **Generate AI kitchen design** at the bottom; designs appear on the right, and you click one to open it in 3D.
 Saved kitchens, the collection, and two help pages (`how-it-works.html`, `how-to-use.html`) are linked in the footer.
 
-## Free by default
+## Design collection
 
-Interio works without any AI connection or paid API:
+`designs/gallery.js` holds 500 kitchens that Claude wrote in KDL. They cover:
+- six layouts, each in sizes that suit it;
+- door and window placements;
+- ten looks;
+- a mix of must-haves, cooking styles, household sizes and budgets.
 
-- **Compose from the collection.** The commission form turns the closest pre-made designs in `designs/gallery.js`
-  into your room. The room takes your size, openings scale with it, and the control layer refits every run to the
-  new walls. Instant, free, offline.
-- **Typed commands** run on a built-in grammar, with no AI.
-- **Copy & paste with Claude** (AI settings) works with a free claude.ai account. The planner shows the prompt,
-  and you paste the few KDL lines back.
+Every design was checked in the app before it was kept: sink, hob, chimney and fridge present, and nothing in front of a fridge, tall unit or dishwasher.
+
+When no Claude connection is set up, **Generate** draws on this collection:
+- Every design is scored against the brief: layout, size and proportions, must-haves, look, cooking, household and budget. Keywords in the notes count too ("u-shaped", "dishwasher", "navy"…).
+- The best matches are tailored: fitted to the room size, given the requested look and add-ons, and re-fitted by the control layer.
+- Three different designs are shown, each checked again before it appears.
+
+The experience is the same as a live generation. In the studio, "Design this room with AI" also works this way and keeps your own walls, door and window.
+
+Regenerate or grow the collection with your own Claude Code (about 6 minutes for 500):
+
+```bash
+node tools/generate-collection.js --count 500 --parallel 8 --model <model>
+```
+
+It is content generated once and published with the site, not a service that runs on your account.
+
+Other ways in, without an API key:
+- **Copy & paste with Claude** (AI settings) works with any claude.ai account.
 - **Claude Code bridge** uses your own subscription, on your own machine only.
-
-The pre-made collection grows by generating KDL designs once (with your own Claude Code) and committing them. That's
-content you publish, not a service other people use through your account.
+- **Typed commands** run on a built-in grammar.
 
 ## Connecting Claude
 
@@ -48,7 +63,7 @@ Open **AI settings** (top right) and pick one of three connections:
 
    Chrome asks whether the site may access your local network the first time it reaches the bridge: allow it (or
    later: site settings → Local network access). Other visitors' browsers look for a bridge on *their own* machine,
-   find none, and fall back to the collection. Your subscription is never shared.
+   find none and use the design collection. Your subscription is never shared.
 2. **API key** — calls the Claude API directly; the key is stored only in that browser.
    For a public site, deploy `proxy/cloudflare-worker.js` and use its URL in the bridge/proxy field.
 3. **Copy & paste with Claude** — no setup: the planner shows the exact prompt; send it in claude.ai
@@ -82,9 +97,7 @@ A deterministic **control layer** turns that into geometry:
 Designs run in parallel and are cached by brief. Measured end-to-end through the bridge (Claude Code 2.1.112,
 Opus 4.7): **3 designs in 6.7 s**. See `docs/SPRINT-REVIEW.md`.
 
-**Instant designs:** `designs/gallery.js` holds pre-generated KDL kitchens. They appear on the hub, and the closest
-one is shown immediately while Claude works. To add more, generate KDL with the same prompt (AI tab → *Design
-source (KDL)* shows the format) and append `{ type, w, d, must, kdl }` entries.
+
 
 ## Typing commands (textbot)
 
@@ -132,7 +145,8 @@ in about 0.4%, all in rooms whose runs are badly overfilled and whose only free 
 ├── bridge/claude-code-bridge.mjs  local bridge: the app → Claude Code (your subscription)
 ├── how-it-works.html  help page: brief → KDL → control layer → studio
 ├── how-to-use.html    help page: controls, typing, saving
-├── designs/gallery.js  pre-generated KDL kitchens (instant designs)
+├── designs/gallery.js  the design collection: 500 KDL kitchens written by Claude
+├── tools/generate-collection.js  builds the collection with Claude Code
 ├── docs/TEXTBOT.md     textbot meta-application design (Interio, ONITO, Slack, Jira)
 ├── docs/SPRINT-REVIEW.md  sprint 4 review: speed, controls, textbot
 ├── proxy/cloudflare-worker.js   optional key-holding proxy for public deployments

@@ -2607,30 +2607,103 @@ function aiManualText(system, user, title) {
 /* ── generation: instant match from the pre-generated gallery, then parallel Claude designs, cached by brief ── */
 const VARIANTS = ['Follow the brief closely.', 'Try a different layout type from the obvious one.', 'Keep it budget-conscious and compact.'];
 const hashStr = s => { let h = 2166136261; for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619); return (h >>> 0).toString(36); };
-/* the free path: the collection (KDL designs stored in the repo) re-fitted to the brief's room — no AI call at all.
-   ROOM takes the brief's size, openings and islands scale with it, and the control layer re-fits every run to the new walls. */
-function galleryMatches(b) {
-  const g = window.INTERIO_GALLERY || [];
-  const wantW = b.widthFt ? parseFloat(b.widthFt) * 30.48 : null, wantD = b.depthFt ? parseFloat(b.depthFt) * 30.48 : null;
-  const score = e => (b.layout !== 'any' && e.type !== b.layout ? 400 : 0) + (wantW ? Math.abs(e.w - wantW) : 0) + (wantD ? Math.abs(e.d - wantD) : 0) + (e.must && b.must.filter(m => !e.must.includes(m)).length * 40);
-  const sc = new Map(g.map(e => [e, score(e) + Math.random() * 30])); return g.slice().sort((x, y) => sc.get(x) - sc.get(y));
+const pickOne = a => a[Math.floor(Math.random() * a.length)];
+/* designs from the collection (written by Claude, stored in designs/gallery.js): score every design against the brief,
+   tailor the best ones (room size, openings, look, add-ons) and let the control layer re-fit them to the walls */
+const NOTE_HINTS = { // words in the notes that mean a field
+  must: [[/dish ?washer/, 'dishwasher'], [/pantry|tall unit/, 'pantry'], [/\boven|otg|bak/, 'oven'], [/\bloft|overhead storage/, 'loft'], [/microwave/, 'microwave'],
+    [/purifier|\bro\b|water filter/, 'ro'], [/breakfast|bar stool|stools|seating|counter seat/, 'seating'], [/double.?door|big fridge|large fridge|side.?by.?side/, 'bigfridge']],
+  layout: [[/u.?shape|horseshoe/, 'U-shaped'], [/galley|parallel|two.?wall/, 'parallel'], [/island/, 'island'], [/peninsula/, 'peninsula'], [/l.?shape|corner kitchen/, 'L-shaped'], [/straight|single.?wall|one wall|linear/, 'straight']],
+  mood: [[/sage|green|olive/, 'Sage green & brass'], [/navy|blue/, 'Navy & marble'], [/all.?white|minimal|white gloss|scandi/, 'All-white minimal'], [/dark|black|charcoal|dramatic/, 'Dark & dramatic'],
+    [/wood|teak|walnut|oak|warm/, 'Warm wood & white quartz'], [/moroccan|colou?rful|terracotta|boho/, 'Colourful Moroccan']],
+  cooking: [[/heavy|daily cooking|rotis?|tadka|deep fry/, 'heavy'], [/light cooking|rarely cook|reheat/, 'light']]
+};
+function readBrief(b0) {
+  const b = Object.assign({}, BRIEF_DEFAULT, b0); b.must = [...(b0.must || [])];
+  const t = ' ' + [b.extra, b.openings].filter(Boolean).join(' ').toLowerCase() + ' ';
+  for (const [re, m] of NOTE_HINTS.must) if (re.test(t) && !b.must.includes(m)) b.must.push(m);
+  if (!b.layout || b.layout === 'any') for (const [re, l] of NOTE_HINTS.layout) if (re.test(t)) { b.layout = l; break; }
+  if (!b.mood) for (const [re, m] of NOTE_HINTS.mood) if (re.test(t)) { b.mood = m; break; }
+  if (!b.cooking) for (const [re, c] of NOTE_HINTS.cooking) if (re.test(t)) { b.cooking = c; break; }
+  const sz = t.match(/(\d+(?:\.\d+)?)\s*(?:x|by|×)\s*(\d+(?:\.\d+)?)\s*(ft|feet|')?/); if (sz && !b.widthFt && !b.depthFt) { b.widthFt = sz[1]; b.depthFt = sz[2]; }
+  return b;
+}
+const STRUCTURAL = ['pantry', 'oven', 'dishwasher', 'bigfridge', 'seating'];
+function collectionScore(e, b) {
+  const ft = v => parseFloat(v) * 30.48, W = b.widthFt ? ft(b.widthFt) : null, D = b.depthFt ? ft(b.depthFt) : null;
+  let s = 0;
+  if (b.layout && b.layout !== 'any') s += e.type === b.layout ? 0 : 1000;                         // layout: a hard preference
+  if (W && D) { const r = (e.w * e.d) / (W * D); s += (Math.abs(e.w - W) + Math.abs(e.d - D)) * .6 + Math.abs(e.w / e.d - W / D) * 120 + (r > 1.8 || r < .55 ? 500 : 0); } // size, proportions; no extreme squeezing
+  else if (W || D) s += Math.min(Math.abs(e.w - (W || D)), Math.abs(e.d - (W || D))) * .6;
+  for (const m of b.must) if (!(e.must || []).includes(m)) s += STRUCTURAL.includes(m) ? 90 : 4;     // add-ons are tailored in later
+  if (b.must.includes('seating') && !/island|peninsula/.test(e.type)) s += 140;
+  if (b.mood && e.mood !== b.mood) s += 70;                                                         // prefer designs already in that look
+  if (b.cooking && e.cooking && e.cooking !== b.cooking) s += 18;
+  if (b.people && e.people) s += Math.abs(+b.people - e.people) * 5;
+  if (b.budget && e.price) s += Math.min(160, Math.abs(e.price / 1e5 - +b.budget) / +b.budget * 90);
+  return s;
+}
+function galleryMatches(b0) {
+  const b = readBrief(b0), g = window.INTERIO_GALLERY || [];
+  const sc = new Map(g.map(e => [e, collectionScore(e, b) + Math.random() * 14])); // a little variety between equal fits
+  return g.slice().sort((x, y) => sc.get(x) - sc.get(y));
 }
 const galleryMatch = b => galleryMatches(b)[0] || null;
-function kdlRefit(kdl, b) {
-  const m = kdl.match(/^ROOM\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)/m); if (!m || !b.widthFt || !b.depthFt) return kdl;
-  const W = Math.round(parseFloat(b.widthFt) * 30.48), D = Math.round(parseFloat(b.depthFt) * 30.48), H = Math.round(parseFloat(b.ceilingFt || 9) * 30.48);
+/* fit a stored design to the brief's room: size; openings scaled (or taken from a real room) */
+function kdlRefit(kdl, b, room) {
+  const m = kdl.match(/^ROOM\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)/m); if (!m) return kdl;
+  let W, D, H;
+  if (room) { W = Math.round((room.x1 - room.x0) * 100); D = Math.round((room.z1 - room.z0) * 100); H = Math.round(room.h * 100); }
+  else { if (!b.widthFt || !b.depthFt) return kdl; W = Math.round(parseFloat(b.widthFt) * 30.48); D = Math.round(parseFloat(b.depthFt) * 30.48); H = Math.round(parseFloat(b.ceilingFt || 9) * 30.48); }
   if (!(W > 150 && D > 150)) return kdl;
-  const sx = W / +m[1], sz = D / +m[2];
-  return kdl.split('\n').map(l => {
+  const sx = W / +m[1], sz = D / +m[2], lines = kdl.split('\n').filter(l => !(room && /^(DOOR|WINDOW)\b/.test(l)));
+  const out = lines.map(l => {
     if (/^ROOM\b/.test(l)) return `ROOM ${W} ${D} ${H}`;
     let q = l.match(/^(DOOR|WINDOW)\s+([NESW])\s+(\d+(?:\.\d+)?)(.*)$/); if (q) return `${q[1]} ${q[2]} ${Math.round(+q[3] * (/[NS]/.test(q[2]) ? sx : sz))}${q[4]}`;
     q = l.match(/^ISLAND\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)(.*)$/); if (q) return `ISLAND ${Math.round(+q[1] * sx)} ${Math.round(+q[2] * sz)}${q[3]}`;
     return l;
-  }).join('\n');
+  });
+  if (room) { const at = out.findIndex(l => /^ROOM\b/.test(l)) + 1; out.splice(at, 0, ...room.feats.map(f => `${f.kind === 'door' ? 'DOOR' : 'WINDOW'} ${f.wall} ${Math.round(f.u * 100)}${f.style === 'w2' ? ' double' : ''}`)); }
+  return out.join('\n');
 }
-function composeFromCollection(b, n) {
-  const out = [];
-  for (const e of galleryMatches(b)) { if (out.length >= n) break; try { out.push(kdlToDoc(kdlRefit(e.kdl, b), { brief: b, collection: true })); } catch (err) { /* skip */ } }
+/* tailor: the brief's look (a STYLE line Claude wrote for that look) and the add-ons that don't change the layout */
+function kdlTailor(kdl, b, k = 0) {
+  let t = kdl;
+  const own = (window.INTERIO_GALLERY || []).find(e => e.kdl === kdl);
+  if (b.mood && own && own.mood !== b.mood) { // another look: take a STYLE Claude wrote for it, and keep the words honest
+    const src = (window.INTERIO_GALLERY || []).filter(e => e.mood === b.mood), sl = src.length && pickOne(src).kdl.match(/^STYLE .*$/m);
+    if (sl) {
+      t = t.replace(/^STYLE .*$/m, sl[0]);
+      const typeWord = ({ straight: ['Line', 'Wall', 'Run'], 'L-shaped': ['L', 'Corner', 'Elbow'], 'U-shaped': ['Horseshoe', 'U', 'Court'], parallel: ['Galley', 'Parallel', 'Corridor'], island: ['Island', 'Centre', 'Table'], peninsula: ['Peninsula', 'Bar', 'Nook'] }[own.type] || ['Kitchen', 'Studio', 'Room'])[k % 3];
+      const moodWord = { 'Warm wood & white quartz': 'Warm Wood', 'All-white minimal': 'White', 'Sage green & brass': 'Sage Brass', 'Navy & marble': 'Navy Marble', 'Dark & dramatic': 'Midnight', 'Colourful Moroccan': 'Moroccan',
+        'Terracotta & cream': 'Terracotta', 'Grey matte & black granite': 'Graphite', 'White gloss & oak': 'Oak Gloss', 'Teak & white': 'Teak' }[b.mood] || 'Studio';
+      const colour = /\b(sage|green|navy|blue|teak|oak|walnut|wood|white|ivory|cream|grey|gray|graphite|black|dark|midnight|terracotta|moroccan|marble|brass|gloss|charcoal)\b/i;
+      t = t.replace(/^NAME .*$/m, `NAME ${moodWord} ${typeWord}`).split('\n').filter(l => !(/^(IDEA|HI) /.test(l) && colour.test(l))).join('\n');
+    }
+  }
+  const adds = ['microwave', 'ro', 'loft'].filter(a => b.must.includes(a));
+  if (b.must.includes('seating') && /^ISLAND|TYPE (island|peninsula)/m.test(t)) adds.push('stools3');
+  if (adds.length) { const have = (t.match(/^ADD (.*)$/m) || ['', ''])[1].split(/\s+/).filter(Boolean), all = [...new Set(have.concat(adds))].join(' '); t = /^ADD /m.test(t) ? t.replace(/^ADD .*$/m, 'ADD ' + all) : t + '\nADD ' + all; }
+  return t;
+}
+/* three designs, different from each other: a second layout type when the brief leaves the layout open */
+function composeFromCollection(b0, n, room) {
+  const b = readBrief(b0), ranked = galleryMatches(b), out = [], used = new Set();
+  const open = !b.layout || b.layout === 'any';
+  const usable = doc => { // the same promises as any design: essentials in, doors that need room are reachable
+    const has = r => doc.items.some(i => (P(i.pid).essential || P(i.pid).role) === r); if (!['sink', 'stove', 'chimney', 'fridge'].every(has)) return false;
+    const kr = S.room, ki = S.items; S.room = doc.room; S.items = doc.items; let ok = true;
+    for (const a of doc.items) { if (!NEED_FRONT.includes(a.pid) || !a.wall) continue; const sa = shapeOf(a), nn = { N: [0, 1], S: [0, -1], W: [1, 0], E: [-1, 0] }[a.wall];
+      const z = { x: sa.x + nn[0] * ((nn[0] ? sa.hw : 0) + .3), z: sa.z + nn[1] * ((nn[1] ? sa.hd : 0) + .3), hw: nn[0] ? .3 : sa.hw - .02, hd: nn[1] ? .3 : sa.hd - .02 };
+      if (doc.items.some(o => o !== a && P(o.pid).mount === 'floor' && (q => Math.abs(q.x - z.x) < q.hw + z.hw - .02 && Math.abs(q.z - z.z) < q.hd + z.hd - .02)(shapeOf(o)))) { ok = false; break; } }
+    S.room = kr; S.items = ki; return ok;
+  };
+  const take = e => { try { const doc = kdlToDoc(kdlTailor(kdlRefit(e.kdl, b, room), b, out.length), { brief: b0 }); used.add(e); if (!usable(doc)) return false; out.push(doc); return true; } catch (err) { used.add(e); return false; } };
+  const nextOf = pred => ranked.find(e => !used.has(e) && pred(e));
+  while (out.length < n) {
+    const types = out.map(d => d.ai.layout_type), e = (open && out.length ? nextOf(x => !types.includes(x.type)) : null) || nextOf(() => true);
+    if (!e) break; if (!take(e)) used.add(e);
+  }
   return out;
 }
 function kdlToDoc(text, extra) {
@@ -2649,9 +2722,14 @@ function genRotate(on, el) {
 }
 async function generateProposals(b) {
   const st = $('#ai-brief-status'); st.textContent = '';
-  if (!aiReady()) { // free: compose from the collection, fitted to this room
-    const results = composeFromCollection(b, 3); store.set('gen', { at: Date.now(), results, free: true }); renderResults(); renderMbar();
-    if (isMobile() && results.length) openDoc(results[0]);
+  if (!aiReady()) { // designs Claude wrote ahead of time (designs/gallery.js), matched and tailored to this brief
+    if (AI.busy) return; AI.busy = true; GEN.stopped = false;
+    Object.assign(GEN, { busy: true, n: 3, t0: Date.now() }); HERO.loop = true; store.set('gen', { at: Date.now(), results: [] }); renderResults(); genClock();
+    const results = composeFromCollection(b, 3), wait = 2600 + Math.random() * 1800;
+    while (Date.now() - GEN.t0 < wait && !GEN.stopped) await new Promise(r => setTimeout(r, 100));
+    AI.busy = false; GEN.busy = false; GEN.drawing = false; HERO.loop = false; clearInterval(GEN.timer); genRotate(false);
+    store.set('gen', { at: Date.now(), results: GEN.stopped ? [] : results }); renderResults(); renderMbar();
+    if (!GEN.stopped && isMobile() && results.length && S.route === 'hub') openDoc(results[0]);
     return;
   }
   if (AI.busy) return; AI.busy = true;
@@ -2721,7 +2799,7 @@ function planColumn(doc, onOpen, i = 0, extra) {
       h('div', { class: 'col-shot' }, shot),
       h('div', { class: 'col-plan', html: planSVG(doc.room, doc.items).replace('<svg ', '<svg preserveAspectRatio="xMinYMid meet" ') }),
       h('div', { class: 'col-meta' }, h('strong', null, doc.title),
-        h('span', null, `${doc.ai.layout_type !== 'other' ? doc.ai.layout_type + ' · ' : ''}${fmtHub(doc.room)} · ${priceHTML(docPrice(doc)).replace(/<[^>]+>/g, '')}${doc.collection ? ' · from the collection' : ''}`))),
+        h('span', null, `${doc.ai.layout_type !== 'other' ? doc.ai.layout_type + ' · ' : ''}${fmtHub(doc.room)} · ${priceHTML(docPrice(doc)).replace(/<[^>]+>/g, '')}`))),
     extra || null);
 }
 const pendingColumn = () => h('div', { class: 'col col-pending', 'aria-hidden': 'true' }, h('div', { class: 'col-plan' }, h('div', { class: 'gen-bar' }, h('i'))), h('div', { class: 'col-meta' }, h('strong', null, 'Designing'), h('span', { class: 't' }, '')));
@@ -2745,7 +2823,8 @@ function renderResults() {
 function renderGallery() { /* the collection lives in a sheet (footer → Collection) */ }
 function openCollection(trigger) {
   let close; const g = h('div', { class: 'sheet-grid' });
-  (window.INTERIO_GALLERY || []).forEach((e, i) => { try { const doc = kdlToDoc(e.kdl, { gallery: true }); g.append(planColumn(doc, () => { close(); openDoc(doc); }, i)); } catch (err) { /* skip a bad entry */ } });
+  const all = window.INTERIO_GALLERY || [], step = Math.max(1, Math.floor(all.length / 12));
+  all.filter((e, i) => i % step === 0).slice(0, 12).forEach((e, i) => { try { const doc = kdlToDoc(e.kdl, { gallery: true }); g.append(planColumn(doc, () => { close(); openDoc(doc); }, i)); } catch (err) { /* skip a bad entry */ } });
   close = openSheet('Collection', g, trigger);
 }
 function openSaved(trigger) {
@@ -2800,9 +2879,7 @@ function renderAITab(sc) {
   box.append(h('div', { class: 'ai-desc' }, h('h3', null, S.title || 'My kitchen'), ai.concept ? h('p', null, ai.concept) : null,
     ai.highlights && ai.highlights.length ? h('ul', { class: 'hl' }, ai.highlights.map(x => h('li', null, x))) : null));
   box.append(h('div', { id: 'ai-plan', class: 'ai-plan', 'aria-hidden': 'true', html: S.room ? planSVG(S.room, S.items) : '' }));
-  box.append(h('div', { class: 'ai-actions' }, aiReady()
-    ? h('button', { class: 'pill-btn primary', onclick: () => tbDesign('A fresh design for this room in the same spirit.') }, S.items.length ? 'Design this room again' : 'Design this room with AI')
-    : h('button', { class: 'pill-btn', onclick: () => showAISettings(() => { updateClaudePill(); renderPanel(true); }) }, 'Connect Claude')));
+  box.append(h('div', { class: 'ai-actions' }, h('button', { class: 'pill-btn primary', onclick: () => tbDesign('A fresh design for this room in the same spirit.') }, S.items.length ? 'Design this room again' : 'Design this room with AI')));
 }
 const refreshAIPlan = () => { const ap = document.getElementById('ai-plan'); if (ap && S.room) ap.innerHTML = planSVG(S.room, S.items); };
 
@@ -3154,7 +3231,16 @@ function viewGen(on) {
   const t0 = Date.now(), p = $('p', v), tick = () => { p.textContent = `1 kitchen · ${Math.round((Date.now() - t0) / 1000)} s`; }; tick(); viewGen.t = setInterval(tick, 500);
 }
 async function tbDesign(brief) {
-  if (!aiReady()) return tbSay('bot', 'Connect Claude in AI settings to generate a new design.', 'bad');
+  if (!aiReady()) { // matched from the collection, fitted to this exact room (its size and its openings)
+    if (TB.busy) return; TB.busy = true; viewGen.stopped = false; viewGen(true); const t0 = Date.now(), wait = 2400 + Math.random() * 1600;
+    const base = Object.assign({}, BRIEF_DEFAULT, store.get('brief', {}), { extra: [store.get('brief', {}).extra, brief].filter(Boolean).join('. ') });
+    const R = S.room, room = { x0: R.x0, x1: R.x1, z0: R.z0, z1: R.z1, h: R.h, feats: R.feats };
+    base.widthFt = String((R.x1 - R.x0) / .3048); base.depthFt = String((R.z1 - R.z0) / .3048);
+    const doc = composeFromCollection(base, 1, room)[0];
+    while (Date.now() - t0 < wait && !viewGen.stopped) await new Promise(r => setTimeout(r, 100));
+    if (!viewGen.stopped && doc) { TB.undo.push(JSON.stringify(currentDoc())); doc.id = S.designId; tbRestore(doc); S.tab = 'ai'; renderPanel(); queueSave(); }
+    TB.busy = false; viewGen(false); return;
+  }
   TB.busy = true; viewGen.stopped = false; const pend = { remove() { viewGen(false); } }, t0 = Date.now(), R = S.room; viewGen(true);
   const room = `Room: ${Math.round((R.x1 - R.x0) * 100)}×${Math.round((R.z1 - R.z0) * 100)} cm, ceiling ${Math.round(R.h * 100)}. Keep these openings: ${R.feats.map(f => `${f.kind.toUpperCase()} ${f.wall} ${Math.round(f.u * 100)}${f.style === 'w2' ? ' double' : ''}`).join(', ') || 'none'}.`;
   try {
@@ -3224,14 +3310,14 @@ function init() {
     const d = e.shiftKey ? .25 : .05, m = { ArrowLeft: [-d, 0], ArrowRight: [d, 0], ArrowUp: [0, -d], ArrowDown: [0, d] }[e.key];
     if (m) { e.preventDefault(); nudge(S.sel, m[0], m[1]); }
   });
-  $('#gen-stop').onclick = () => aiCancelAll();
+  $('#gen-stop').onclick = () => { GEN.stopped = true; aiCancelAll(); };
   $('#open-saved').onclick = e => openSaved(e.currentTarget); $('#open-collection').onclick = e => openCollection(e.currentTarget);
   $('#hdr-ai').onclick = () => showAISettings(() => { updateClaudePill(); if (S.route !== 'hub') renderPanel(true); });
   if (!store.get('cookies', false)) { const foot = $('.app-foot'); if (foot) foot.insertBefore($('#cookie'), foot.lastElementChild); $('#cookie').hidden = false; $('#cookie-ok').onclick = () => { store.set('cookies', true); $('#cookie').hidden = true; };  }
   window.addEventListener('hashchange', route);
   window.addEventListener('beforeunload', saveNow);
   updateBagCount(); route();
-  window.__interio = { S, CAM, GL, AI, TB, addItem, select, enterEdit, setView, PRODUCTS, P, refreshWarnings, computeWarnings, shapeOf, priceOf, realizeDesign, parseKDL, realizeKDL, kdlSystem, kdlBrief, kdlToDoc, tbParse, tbExec, tbSubmit, tbSystem, tbScene, overlaps, featureHit, kdlRefit, composeFromCollection, fitRun }; // handy for debugging
+  window.__interio = { S, CAM, GL, AI, TB, addItem, select, enterEdit, setView, PRODUCTS, P, refreshWarnings, computeWarnings, shapeOf, priceOf, realizeDesign, parseKDL, realizeKDL, kdlSystem, kdlBrief, kdlToDoc, tbParse, tbExec, tbSubmit, tbSystem, tbScene, overlaps, featureHit, kdlRefit, composeFromCollection, fitRun, docPrice }; // handy for debugging
 }
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
 })();
