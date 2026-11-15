@@ -1114,3 +1114,21 @@ html,body{background:var(--paper);font-family:var(--ui);font-size:14px;letter-sp
 .view-gen h2,.view-gen p{z-index:2}
 .view-gen .text-btn,.view-gen .gen-bar{z-index:2}
 .view-gen h2,.view-gen p{top:auto;left:auto}
+/* a column: the still takes the free height; the plan is a fixed band right above the name */
+.col-hit{justify-content:flex-start}
+.col-shot{flex:1 1 auto;min-height:0}
+.col-shot img{object-fit:cover;object-position:50% 50%}
+.col-plan{flex:0 0 clamp(120px,20vh,200px);position:relative}
+.col-plan svg{left:var(--gut);right:var(--gut);top:18px;bottom:0;inset:18px var(--gut) 0;width:calc(100% - 2 * var(--gut));height:calc(100% - 18px)}
+.col-meta{padding-top:16px}
+.sheet-grid .col{min-height:480px}
+.sheet-grid .col-plan{flex-basis:120px}
+.sheet-grid .col-plan svg{inset:14px 22px 0;width:calc(100% - 44px);height:calc(100% - 14px)}
+/* the three columns share rows: stills end on one line, plans on another, names on a third */
+@supports (grid-template-rows:subgrid){
+  .triptych{grid-template-rows:minmax(0,1fr) auto auto}
+  .triptych .col{grid-row:1 / 4;display:grid;grid-template-rows:subgrid}
+  .triptych .col-hit{grid-row:1 / 4;display:grid;grid-template-rows:subgrid}
+  .triptych .col-plan{height:clamp(120px,20vh,200px)}
+}
+@media (max-width:1023px),(max-height:619px){ .triptych{grid-template-rows:none} .triptych .col,.triptych .col-hit{grid-row:auto;display:flex;flex-direction:column} .triptych .col-shot{min-height:44vh} }

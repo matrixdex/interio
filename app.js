@@ -2632,10 +2632,10 @@ function snapshotDoc(doc) {
     const room = JSON.parse(JSON.stringify(doc.room)); room.style = Object.assign({}, DEFAULT_STYLE, room.style || {}); room.fin = room.fin || 0;
     const items = (doc.items || []).filter(d => P(d.pid)).map(d => ({ uid: uid(), pid: d.pid, v: d.v || 0, cfg: Object.assign(defCfg(P(d.pid)), d.cfg || {}), x: d.x, z: d.z, rot: d.rot || 0, wall: d.wall ?? null, purpose: '' }));
     load(room, items); fitCamera(); CAM.az = 38; CAM.el = 30; CAM.px = 0; CAM.pz = 0;
-    const W = 900, H = 900; GL.renderer.setSize(W, H, false); GL.vw = W; GL.vh = H; GL.persp.aspect = W / H; GL.persp.updateProjectionMatrix(); updateCamera();
+    const W = 660, H = 900; GL.renderer.setSize(W, H, false); // portrait, the shape of the column it fills GL.vw = W; GL.vh = H; GL.persp.aspect = W / H; GL.persp.updateProjectionMatrix(); updateCamera();
     // frame the whole room: pull the camera until its eight corners sit inside 88% of the frame
     const R = S.room, corners = []; for (const x of [R.x0, R.x1]) for (const y of [0, R.h]) for (const z of [R.z0, R.z1]) corners.push(new THREE.Vector3(x, y, z));
-    for (let k = 0; k < 6; k++) { const m = Math.max(...corners.map(v => { const q = v.clone().project(GL.cam); return Math.max(Math.abs(q.x), Math.abs(q.y)); })); CAM.dist = clamp(CAM.dist * m / .88, 2, 80); updateCamera(); }
+    for (let k = 0; k < 6; k++) { const m = Math.max(...corners.map(v => { const q = v.clone().project(GL.cam); return Math.max(Math.abs(q.x), Math.abs(q.y)); })); CAM.dist = clamp(CAM.dist * m / .9, 2, 80); updateCamera(); }
     GL.renderer.setClearColor(0xebe6dd, 1); GL.renderer.render(GL.scene, GL.cam); url = GL.renderer.domElement.toDataURL('image/jpeg', .88);
   } catch (e) { console.warn('snapshot failed', e); }
   // put everything back
@@ -2659,7 +2659,7 @@ function planColumn(doc, onOpen, i = 0, extra) {
   return h('div', { class: 'col' + (fresh ? ' enter' : ''), style: `--i:${i}` },
     h('button', { class: 'col-hit', 'aria-label': `Open ${doc.title}`, onclick: onOpen },
       h('div', { class: 'col-shot' }, shot),
-      h('div', { class: 'col-plan', html: planSVG(doc.room, doc.items) }),
+      h('div', { class: 'col-plan', html: planSVG(doc.room, doc.items).replace('<svg ', '<svg preserveAspectRatio="xMinYMid meet" ') }),
       h('div', { class: 'col-meta' }, h('strong', null, doc.title),
         h('span', null, `${doc.ai.layout_type !== 'other' ? doc.ai.layout_type + ' · ' : ''}${fmtHub(doc.room)} · ${priceHTML(docPrice(doc)).replace(/<[^>]+>/g, '')}${doc.collection ? ' · from the collection' : ''}`))),
     extra || null);
