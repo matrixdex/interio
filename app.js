@@ -1891,7 +1891,7 @@ function roomCard(name, R, tid, opts = {}) {
 const savedDocs = () => Object.values(docs()).filter(d => d && d.room && d.kitchen).sort((a, b) => b.updated - a.updated);
 function updateHubFoot() { const b = $('#open-saved'), n = savedDocs().length; if (!b) return; b.hidden = !n; $('#saved-count').textContent = n; }
 /* is an AI model really reachable? Config alone isn't enough (a saved bridge URL says nothing about whether it runs).
-   Checked at start, every 20 s, when the tab comes back, and right before generating. */
+   Checked at start, every minute, when the tab comes back, and right before generating. */
 async function probeAI() {
   const m = aiMode(); let live = false;
   if (m === 'manual') live = true;
@@ -3334,7 +3334,7 @@ function init() {
   $('#gen-stop').onclick = () => { GEN.stopped = true; aiCancelAll(); };
   $('#open-saved').onclick = e => openSaved(e.currentTarget); $('#open-collection').onclick = e => openCollection(e.currentTarget);
   $('#hdr-ai').onclick = () => showAISettings(() => { probeAI(); if (S.route !== 'hub') renderPanel(true); });
-  probeAI(); setInterval(() => { if (!document.hidden) probeAI(); }, 20000);
+  probeAI(); setInterval(() => { if (!document.hidden) probeAI(); }, 60000);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) probeAI(); }); window.addEventListener('focus', () => probeAI());
   if (!store.get('cookies', false)) { const foot = $('.app-foot'); if (foot) foot.insertBefore($('#cookie'), foot.lastElementChild); $('#cookie').hidden = false; $('#cookie-ok').onclick = () => { store.set('cookies', true); $('#cookie').hidden = true; };  }
   window.addEventListener('hashchange', route);
