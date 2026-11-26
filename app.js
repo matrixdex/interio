@@ -1545,7 +1545,7 @@ function route() {
   else history.replaceState(null, '', `#${S.templateId}/${S.designId}`);
 }
 function showDesigner() {
-  S.route = 'designer'; $('#hub').hidden = true; $('#designer').hidden = false; document.title = 'Studio — PLINTHEL';
+  S.route = 'designer'; $('#hub').hidden = true; $('#designer').hidden = false; document.title = 'PLINTHEL';
   if (!TH.r && !TH.failed) thumbInit(); resize(); markDirty(); mbarOpen(false); setTimeout(renderMbar, 0);
 }
 function showHub() {
