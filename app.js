@@ -1890,7 +1890,28 @@ function roomCard(name, R, tid, opts = {}) {
 }
 const savedDocs = () => Object.values(docs()).filter(d => d && d.room && d.kitchen).sort((a, b) => b.updated - a.updated);
 function updateHubFoot() { const b = $('#open-saved'), n = savedDocs().length; if (!b) return; b.hidden = !n; $('#saved-count').textContent = n; }
-function updateClaudePill() { const p = $('#hdr-ai'); if (!p) return; const on = aiReady(); p.classList.toggle('on', on); p.title = on ? `Claude · ${AI_MODE_NAME[aiMode()]}` : 'Connect Claude for new designs'; }
+/* is an AI model really reachable? Config alone isn't enough (a saved bridge URL says nothing about whether it runs).
+   Checked at start, every 20 s, when the tab comes back, and right before generating. */
+async function probeAI() {
+  const m = aiMode(); let live = false;
+  if (m === 'manual') live = true;
+  else if (aiReady()) {
+    const ctrl = new AbortController(), t = setTimeout(() => ctrl.abort(), 2500);
+    try {
+      const r = m === 'bridge' ? await fetch(AI.cfg.proxy.replace(/\/+$/, '') + '/v1/models/probe', { signal: ctrl.signal, cache: 'no-store' })
+        : await fetch('https://api.anthropic.com/v1/models?limit=1', { signal: ctrl.signal, headers: { 'x-api-key': AI.cfg.key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' } });
+      live = r.ok;
+    } catch (e) { live = false; }
+    clearTimeout(t);
+  }
+  AI.live = live; AI.checkedAt = Date.now(); updateClaudePill(); return live;
+}
+const aiUsable = async () => (AI.live && Date.now() - AI.checkedAt < 15000) ? true : probeAI();
+function updateClaudePill() {
+  const on = !!AI.live, label = on ? 'AI model connected' : 'AI model disconnected';
+  for (const p of [$('#hdr-ai'), $('#mbar-claude')]) { if (!p) continue; p.classList.toggle('on', on); p.title = label; p.setAttribute('aria-label', label); }
+  const l = $('#hdr-ai-label'); if (l) l.textContent = label;
+}
 function renderHub() { renderBrief(); renderResults(); updateHubFoot(); updateClaudePill(); renderMbar(); if (typeof mbarOpen === 'function') mbarOpen(isMobile()); hydrateIcons($('#hub')); }
 const fmtHub = R => `${(R.x1 - R.x0).toFixed(1)} × ${(R.z1 - R.z0).toFixed(1)} m`;
 /* hero: an axonometric drawing of a kitchen being "printed" module by module — each one rises from its footprint
@@ -2722,7 +2743,7 @@ function genRotate(on, el) {
 }
 async function generateProposals(b) {
   const st = $('#ai-brief-status'); st.textContent = '';
-  if (!aiReady()) { // designs Claude wrote ahead of time (designs/gallery.js), matched and tailored to this brief
+  if (!(await aiUsable())) { // designs Claude wrote ahead of time (designs/gallery.js), matched and tailored to this brief
     if (AI.busy) return; AI.busy = true; GEN.stopped = false;
     Object.assign(GEN, { busy: true, n: 3, t0: Date.now() }); HERO.loop = true; store.set('gen', { at: Date.now(), results: [] }); renderResults(); genClock();
     const results = composeFromCollection(b, 3), wait = 2600 + Math.random() * 1800;
@@ -2897,7 +2918,7 @@ function mbarOpen(open) { const b = $('#mbar-body'), t = $('#mbar-toggle'); if (
 function renderMbar() {
   if (!$('#mbar')) return;
   $('#mbar-title').textContent = S.route === 'designer' ? (S.title || 'My kitchen') : 'Interio';
-  const on = aiReady(); $('#mbar-claude').classList.toggle('on', on); $('#mbar-claude').title = on ? 'Claude connected' : 'Connect Claude';
+  updateClaudePill();
   const gen = store.get('gen', null), list = (gen && gen.results) || [], map = store.get('opened', {}), box = $('#mbar-designs');
   box.innerHTML = ''; box.hidden = !list.length;
   list.slice(0, 3).forEach(doc => {
@@ -2917,7 +2938,7 @@ function initMobileShell() {
   document.addEventListener('gesturechange', e => { if (isMobile()) e.preventDefault(); }, { passive: false });
   if (!$('#mbar')) return;
   $('#mbar-toggle').onclick = () => mbarOpen($('#mbar-body').hidden);
-  $('#mbar-claude').onclick = () => showAISettings(() => { updateClaudePill(); renderMbar(); });
+  $('#mbar-claude').onclick = () => showAISettings(() => { probeAI(); renderMbar(); });
   $('#m-empty').onclick = () => { mbarOpen(false); startBuild(); };
   $('#m-gen').onclick = () => mobileGenerate('');
   $('#m-opts-toggle').onclick = e => { const o = $('#m-opts'); o.hidden = !o.hidden; e.currentTarget.setAttribute('aria-expanded', !o.hidden); };
@@ -3196,7 +3217,7 @@ async function tbSubmit(text) {
   tbSay('user', text);
   let cmds = null, via = 'grammar';
   try { cmds = tbParse(text); } catch (e) { return tbSay('bot', e.message, 'bad'); }
-  if (!cmds && aiReady() && aiMode() !== 'manual') {
+  if (!cmds && aiMode() !== 'manual' && await aiUsable()) {
     TB.busy = true; const pend = tbSay('bot', 'Interpreting with Claude…', 'pending'); const t0 = Date.now();
     try { const out = await aiText(tbSystem(), `${tbScene()}\n\nMessage: ${text}`, null, { effort: 'low', maxTokens: 400 }); cmds = out.split(/\r?\n/).map(l => l.replace(/^[-*\d.)\s]+/, '').trim()).filter(l => /^[A-Z]{3,}/.test(l)); via = `Claude, ${((Date.now() - t0) / 1000).toFixed(0)} s`; }
     catch (e) { pend.remove(); TB.busy = false; return tbSay('bot', aiErrorText(e), 'bad'); }
@@ -3231,7 +3252,7 @@ function viewGen(on) {
   const t0 = Date.now(), p = $('p', v), tick = () => { p.textContent = `1 kitchen · ${Math.round((Date.now() - t0) / 1000)} s`; }; tick(); viewGen.t = setInterval(tick, 500);
 }
 async function tbDesign(brief) {
-  if (!aiReady()) { // matched from the collection, fitted to this exact room (its size and its openings)
+  if (!(await aiUsable())) { // matched from the collection, fitted to this exact room (its size and its openings)
     if (TB.busy) return; TB.busy = true; viewGen.stopped = false; viewGen(true); const t0 = Date.now(), wait = 2400 + Math.random() * 1600;
     const base = Object.assign({}, BRIEF_DEFAULT, store.get('brief', {}), { extra: [store.get('brief', {}).extra, brief].filter(Boolean).join('. ') });
     const R = S.room, room = { x0: R.x0, x1: R.x1, z0: R.z0, z1: R.z1, h: R.h, feats: R.feats };
@@ -3312,7 +3333,9 @@ function init() {
   });
   $('#gen-stop').onclick = () => { GEN.stopped = true; aiCancelAll(); };
   $('#open-saved').onclick = e => openSaved(e.currentTarget); $('#open-collection').onclick = e => openCollection(e.currentTarget);
-  $('#hdr-ai').onclick = () => showAISettings(() => { updateClaudePill(); if (S.route !== 'hub') renderPanel(true); });
+  $('#hdr-ai').onclick = () => showAISettings(() => { probeAI(); if (S.route !== 'hub') renderPanel(true); });
+  probeAI(); setInterval(() => { if (!document.hidden) probeAI(); }, 20000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) probeAI(); }); window.addEventListener('focus', () => probeAI());
   if (!store.get('cookies', false)) { const foot = $('.app-foot'); if (foot) foot.insertBefore($('#cookie'), foot.lastElementChild); $('#cookie').hidden = false; $('#cookie-ok').onclick = () => { store.set('cookies', true); $('#cookie').hidden = true; };  }
   window.addEventListener('hashchange', route);
   window.addEventListener('beforeunload', saveNow);

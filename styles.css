@@ -1226,3 +1226,6 @@ html,body{background:var(--paper);font-family:var(--ui);font-size:14px;letter-sp
   #hub .stage-pane,#view,#gl,.mbar-row,.mfoot{touch-action:none}
   .mbar-body{touch-action:pan-y;overscroll-behavior:contain}
 }
+/* AI model status: a red or green light */
+.claude-pill .dot{background:#c2412d;box-shadow:0 0 0 3px rgba(194,65,45,.14)}
+.claude-pill.on .dot{background:#3f9a5b;box-shadow:0 0 0 3px rgba(63,154,91,.16)}
