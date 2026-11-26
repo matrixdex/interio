@@ -1230,3 +1230,6 @@ html,body{background:var(--paper);font-family:var(--ui);font-size:14px;letter-sp
 .claude-pill .dot{background:#c2412d;box-shadow:0 0 0 3px rgba(194,65,45,.14)}
 .claude-pill.on .dot{background:#3f9a5b;box-shadow:0 0 0 3px rgba(63,154,91,.16)}
 .claude-pill .dot,.claude-pill.on .dot{box-shadow:none}
+/* the wordmark: Italiana has one thin weight — thicken its strokes so it holds the corner */
+.brand-name{color:var(--ink);font-size:24px;-webkit-text-stroke:.7px currentColor;paint-order:stroke fill}
+.mbar-toggle span{-webkit-text-stroke:.45px currentColor}
