@@ -1545,12 +1545,12 @@ function route() {
   else history.replaceState(null, '', `#${S.templateId}/${S.designId}`);
 }
 function showDesigner() {
-  S.route = 'designer'; $('#hub').hidden = true; $('#designer').hidden = false; document.title = 'Studio — Plinthel';
+  S.route = 'designer'; $('#hub').hidden = true; $('#designer').hidden = false; document.title = 'Studio — PLINTHEL';
   if (!TH.r && !TH.failed) thumbInit(); resize(); markDirty(); mbarOpen(false); setTimeout(renderMbar, 0);
 }
 function showHub() {
   if (S.route === 'designer') saveNow();
-  S.route = 'hub'; S.designId = null; $('#hub').hidden = false; $('#designer').hidden = true; document.title = 'Plinthel'; closePopovers(); renderHub(); window.scrollTo(0, 0);
+  S.route = 'hub'; S.designId = null; $('#hub').hidden = false; $('#designer').hidden = true; document.title = 'PLINTHEL'; closePopovers(); renderHub(); window.scrollTo(0, 0);
 }
 
 /* ═══════════════ 11 · hub ═══════════════ */
@@ -2917,7 +2917,8 @@ function placeForViewport() {
 function mbarOpen(open) { const b = $('#mbar-body'), t = $('#mbar-toggle'); if (!b) return; b.hidden = !open; t.setAttribute('aria-expanded', open); $('#mbar').classList.toggle('open', open); if (S.route === 'designer') setTimeout(resize, 0); }
 function renderMbar() {
   if (!$('#mbar')) return;
-  $('#mbar-title').textContent = S.route === 'designer' ? (S.title || 'My kitchen') : 'Plinthel';
+  $('#mbar-title').textContent = S.route === 'designer' ? (S.title || 'My kitchen') : 'PLINTHEL';
+  $('#mbar-title').classList.toggle('is-brand', S.route !== 'designer');
   updateClaudePill();
   const gen = store.get('gen', null), list = (gen && gen.results) || [], map = store.get('opened', {}), box = $('#mbar-designs');
   box.innerHTML = ''; box.hidden = !list.length;

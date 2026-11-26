@@ -1233,3 +1233,5 @@ html,body{background:var(--paper);font-family:var(--ui);font-size:14px;letter-sp
 /* the wordmark: Italiana has one thin weight — thicken its strokes so it holds the corner */
 .brand-name{color:var(--ink);font-size:24px;-webkit-text-stroke:.7px currentColor;paint-order:stroke fill}
 .mbar-toggle span{-webkit-text-stroke:.45px currentColor}
+/* phone bar: the wordmark in capitals, tracked like the desktop one; kitchen names stay as written */
+.mbar-toggle span.is-brand{letter-spacing:.24em;font-size:19px}
