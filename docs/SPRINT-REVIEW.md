@@ -11,7 +11,7 @@ There is a written design for a textbot meta-application.
 | S4-2 | As a touch/trackpad user I can pinch to zoom, two-finger orbit/pan, and drag doors and windows along walls. | 5 | ✅ Done |
 | S4-3 | As a user I can drag a product from the catalogue straight into the room. | 3 | ✅ Done |
 | S4-4 | As a user I can type commands ("move wall to the right", "move window 50 cm down the wall") and they are executed. | 8 | ✅ Done: grammar tier, Claude tier, undo and redo |
-| S4-5 | As a product owner I have a design for a textbot that works across apps (Interio, ONITO, Slack, Jira). | 5 | ✅ Done: `docs/TEXTBOT.md` |
+| S4-5 | As a product owner I have a design for a textbot that works across apps (Plinthel, ONITO, Slack, Jira). | 5 | ✅ Done: `docs/TEXTBOT.md` |
 | S4-6 | Generated designs never lose the sink, hob, chimney or fridge. | 5 | ✅ Done: control layer; 11/11 test designs keep all four |
 
 Velocity: **34 points** committed, 34 done.

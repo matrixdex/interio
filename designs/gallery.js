@@ -1,4 +1,4 @@
-/* Interio design collection: 500 kitchens written by Claude in KDL (see tools/generate-collection.js).
+/* Plinthel design collection: 500 kitchens written by Claude in KDL (see tools/generate-collection.js).
    Each entry: { type, w, d (cm), must[], mood, cooking, people, budget (lakh), price (Rs), kdl } */
 window.INTERIO_GALLERY = [
 {"type":"U-shaped","w":305,"d":396,"must":["microwave"],"mood":"Colourful Moroccan","cooking":"heavy","people":3,"budget":8,"price":460931,"kdl":"NAME Moroccan Masala U\nTYPE U-shaped\nIDEA Vibrant moroccan U-kitchen with sink under north window and heavy-duty hob run on the west.\nHI 5-burner hob with curved chimney\nHI Sink under north window\nHI Tall pantry + double fridge\nROOM 305 396 305\nDOOR E 60\nWINDOW N 150\nSTYLE 5 quartz-white gola moroccan dado f10 curved\nRUN N 0: b60.3dr sink90.double b60.2d b90.blind\nRUN W 0: tall60.pantry b60.2d hob75.5 b90.3dr b60.2d\nRUN E 60: b60.2d dw60 b60.3dr gap25 fridge.double\nADD microwave otg mixer ro loft"},

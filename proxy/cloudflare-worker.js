@@ -1,5 +1,5 @@
 /**
- * Optional proxy for the Interio AI designer (Cloudflare Worker).
+ * Optional proxy for the Plinthel AI designer (Cloudflare Worker).
  * Keeps the Anthropic API key on the server so visitors of the GitHub Pages site don't need one.
  *
  * Deploy:  wrangler secret put ANTHROPIC_API_KEY   (and set ALLOWED_ORIGIN, e.g. https://<user>.github.io)

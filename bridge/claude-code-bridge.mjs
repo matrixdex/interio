@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
- * Interio ↔ Claude Code bridge
+ * Plinthel ↔ Claude Code bridge
  * ─────────────────────────────
- * Lets the Interio planner use YOUR Claude subscription (through the Claude Code CLI you are
+ * Lets the Plinthel planner use YOUR Claude subscription (through the Claude Code CLI you are
  * already logged in to) instead of an API key. It runs on your machine and speaks just enough of
  * the Messages API for the app: the app thinks it is talking to a proxy; each request is answered
  * by running `claude -p` headless with the app's system prompt and JSON schema.
@@ -123,7 +123,7 @@ http.createServer(async (req, res) => {
   if (req.method === 'POST' && path === '/v1/messages') return handleMessages(req, res).catch(e => { if (!res.headersSent) apiError(res, 500, 'api_error', e.message); else res.end(); });
   apiError(res, 404, 'not_found_error', 'Only POST /v1/messages and GET /v1/models are bridged.');
 }).listen(PORT, '127.0.0.1', () => {
-  console.log(`Interio ↔ Claude Code bridge on http://127.0.0.1:${PORT}`);
+  console.log(`Plinthel ↔ Claude Code bridge on http://127.0.0.1:${PORT}`);
   if (FORCE_MODEL) console.log(`Every request uses model: ${FORCE_MODEL}`);
   console.log(`Allowed origins: file:// pages, localhost${ORIGINS.length > 1 ? ', ' + ORIGINS.slice(1).join(', ') : ''}`);
   console.log('In the app: AI settings → Claude Code bridge → this URL. Ctrl+C to stop.');

@@ -1,4 +1,4 @@
-/* Interio Kreativ — single-file SPA (vanilla JS + three.js r152 classic build)
+/* Plinthel — single-file SPA (vanilla JS + three.js r152 classic build)
  * Sections: 1 utils/icons · 2 textures & materials · 3 catalog (dummy 3D objects) · 4 rooms & templates
  *           5 scene/camera · 6 items & interaction · 7 UI (panel, popovers, wizard) · 8 hub & routing
  */
@@ -1545,12 +1545,12 @@ function route() {
   else history.replaceState(null, '', `#${S.templateId}/${S.designId}`);
 }
 function showDesigner() {
-  S.route = 'designer'; $('#hub').hidden = true; $('#designer').hidden = false; document.title = 'Studio — Interio';
+  S.route = 'designer'; $('#hub').hidden = true; $('#designer').hidden = false; document.title = 'Studio — Plinthel';
   if (!TH.r && !TH.failed) thumbInit(); resize(); markDirty(); mbarOpen(false); setTimeout(renderMbar, 0);
 }
 function showHub() {
   if (S.route === 'designer') saveNow();
-  S.route = 'hub'; S.designId = null; $('#hub').hidden = false; $('#designer').hidden = true; document.title = 'Interio'; closePopovers(); renderHub(); window.scrollTo(0, 0);
+  S.route = 'hub'; S.designId = null; $('#hub').hidden = false; $('#designer').hidden = true; document.title = 'Plinthel'; closePopovers(); renderHub(); window.scrollTo(0, 0);
 }
 
 /* ═══════════════ 11 · hub ═══════════════ */
@@ -2917,7 +2917,7 @@ function placeForViewport() {
 function mbarOpen(open) { const b = $('#mbar-body'), t = $('#mbar-toggle'); if (!b) return; b.hidden = !open; t.setAttribute('aria-expanded', open); $('#mbar').classList.toggle('open', open); if (S.route === 'designer') setTimeout(resize, 0); }
 function renderMbar() {
   if (!$('#mbar')) return;
-  $('#mbar-title').textContent = S.route === 'designer' ? (S.title || 'My kitchen') : 'Interio';
+  $('#mbar-title').textContent = S.route === 'designer' ? (S.title || 'My kitchen') : 'Plinthel';
   updateClaudePill();
   const gen = store.get('gen', null), list = (gen && gen.results) || [], map = store.get('opened', {}), box = $('#mbar-designs');
   box.innerHTML = ''; box.hidden = !list.length;

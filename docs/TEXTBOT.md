@@ -17,8 +17,8 @@ translates text into a small, closed command language that the app already knows
 translation is a handful of tokens. It is fast, cheap, auditable and undoable, and wrong output fails
 validation instead of corrupting state.
 
-The first implementation is live in Interio (`app.js`, section 14). This document generalises it into a
-meta-application and specifies textbots for **Interio**, **ONITO**, **Slack** and **Jira**.
+The first implementation is live in Plinthel (`app.js`, section 14). This document generalises it into a
+meta-application and specifies textbots for **Plinthel**, **ONITO**, **Slack** and **Jira**.
 
 ---
 
@@ -100,7 +100,7 @@ The textbot must not answer outside its threshold. Three things enforce it:
 - The **UI** shows the refusal with 3–4 chips of things it *can* do, so a refusal is a dead end for the request but not
   for the user.
 
-Verified in Interio:
+Verified in Plinthel:
 
 | Input | Path | Result |
 |---|---|---|
@@ -151,7 +151,7 @@ The textbot does not chit-chat, give advice outside the manifest, or apologise a
 
 ### 1.6 Metrics
 
-| Metric | Target | Interio today |
+| Metric | Target | Plinthel today |
 |---|---|---|
 | Grammar hit rate (precise typing) | ≥ 80% | 16 / 18 scripted commands handled without the LLM |
 | Median latency, grammar | < 50 ms | ~1 ms |
@@ -162,7 +162,7 @@ The textbot does not chit-chat, give advice outside the manifest, or apologise a
 
 ---
 
-## 2. Interio (implemented)
+## 2. Plinthel (implemented)
 
 **Scope:** one kitchen — room, openings, units, finishes, views. **Refs:** `window#n`, `door#n`, `<role>#n`
 (`fridge#1`, `sink-unit#1`, `stove#1`, `base-cab#3`, …).

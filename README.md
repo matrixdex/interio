@@ -1,4 +1,4 @@
-# Interio
+# Plinthel
 
 A 3D studio for modular Indian kitchens in plain HTML + CSS + JS. There's no build step and no server: open
 `index.html`, or publish the repo root on GitHub Pages.
@@ -147,7 +147,7 @@ in about 0.4%, all in rooms whose runs are badly overfilled and whose only free 
 ├── how-to-use.html    help page: controls, typing, saving
 ├── designs/gallery.js  the design collection: 500 KDL kitchens written by Claude
 ├── tools/generate-collection.js  builds the collection with Claude Code
-├── docs/TEXTBOT.md     textbot meta-application design (Interio, ONITO, Slack, Jira)
+├── docs/TEXTBOT.md     textbot meta-application design (Plinthel, ONITO, Slack, Jira)
 ├── docs/SPRINT-REVIEW.md  sprint 4 review: speed, controls, textbot
 ├── proxy/cloudflare-worker.js   optional key-holding proxy for public deployments
 ├── PLAN.md             prototype plan: deterministic core → tools → generative UI

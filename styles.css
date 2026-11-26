@@ -1,4 +1,4 @@
-/* Interio Kreativ — styles */
+/* Plinthel — styles */
 :root{
   --blue:#0058a3; --blue-d:#004f93; --yellow:#ffd400; --ink:#111; --ink2:#484848; --muted:#767676;
   --line:#e0e0e0; --bg:#fff; --bg2:#f5f5f5; --stage:#cfcfcf; --radius:999px;
@@ -464,7 +464,7 @@ body.dragging,body.dragging *{cursor:grabbing!important;user-select:none}
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════════════════════
-   ATELIER — the Interio design system (overrides everything above).
+   ATELIER — the Plinthel design system (overrides everything above).
    Paper, ink and one brass accent. Italiana for the voice, Manrope for the interface, JetBrains Mono
    for the machine: part codes, dimensions, commands — modularity shown as an artifact of technology.
    ═══════════════════════════════════════════════════════════════════════════════════════════════ */
