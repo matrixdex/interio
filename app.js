@@ -1986,7 +1986,7 @@ function drawHero(target) {
         const top = iso(x + w / 2, y0 + hgt, z + d / 2), lx = top[0], rank = floorRank.indexOf(i), ly = iso(0, 2.75, 0)[1] - 18 + (rank % 3) * 13;
         g.globalAlpha = clamp((t - .4 - i * step - .7) / .4, 0, 1);
         g.strokeStyle = INK; g.lineWidth = .5; g.beginPath(); g.moveTo(lx, top[1] - 2); g.lineTo(lx, ly + 4); g.stroke();
-        g.fillStyle = INK; g.font = '500 9px "JetBrains Mono", ui-monospace, monospace'; g.textAlign = 'center'; g.fillText(code, lx, ly);
+        g.fillStyle = INK; g.font = '500 9px "Geist Mono", ui-monospace, monospace'; g.textAlign = 'center'; g.fillText(code, lx, ly);
         g.globalAlpha = 1;
       } else { // the print line
         seg([x - .03, y1, z + d], [x + w + .03, y1, z + d], BRASS, 1.6); seg([x + w, y1, z - .03], [x + w, y1, z + d + .03], BRASS, 1.6);

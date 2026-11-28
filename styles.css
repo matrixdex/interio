@@ -1235,3 +1235,26 @@ html,body{background:var(--paper);font-family:var(--ui);font-size:14px;letter-sp
 .mbar-toggle span{-webkit-text-stroke:.45px currentColor}
 /* phone bar: the wordmark in capitals, tracked like the desktop one; kitchen names stay as written */
 .mbar-toggle span.is-brand{letter-spacing:.24em;font-size:19px}
+
+/* ── Type: Geist throughout; Italiana only for the PLINTHEL wordmark ── */
+:root{
+  --ui:"Geist",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --sans:var(--ui);
+  --display:"Geist",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+  --mono:"Geist Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  font-family:var(--ui);
+}
+html,body,button,input,select,textarea{font-family:var(--ui)}
+.brand-name,.mbar-toggle span.is-brand{font-family:"Italiana","Didot","Bodoni 72",Georgia,serif}
+.mbar-toggle span:not(.is-brand){-webkit-text-stroke:0;font-family:var(--ui);font-weight:500;font-size:17px;letter-spacing:-.01em}
+.mbar-toggle{font-family:var(--ui)}
+/* former Italiana display text, now Geist: heavier, tighter as it grows */
+h1,h2,h3,.col-meta strong,.kc-meta strong,.sheet-head h3,.ai-desc h3,.modal h3,.wiz h2,.mtile-name,.title-input,.icard h4,.icard .pr,.sumtotal,.pprice,.ihead h3,.acc>button b,.lgroup h4,.stsec h4,.roomtype,#warn-body h4,#popover-root .pop h4,.tb-msg.none,#hub .gen-view h2,.view-gen h2,.footer-mark{font-family:var(--display);font-weight:500;letter-spacing:-.02em}
+#hub .gen-view h2,.view-gen h2,.page h1{letter-spacing:-.035em;font-weight:500}
+.col-meta strong{font-size:clamp(20px,1.7vw,26px);line-height:1.15}
+.ai-desc h3{font-size:26px;line-height:1.15}
+.title-input{font-size:19px}
+.sheet-head h3{font-size:26px}
+.mtile-name{font-size:14px}
+.tb-msg.none{font-size:16px}
+.page h1{font-family:var(--display)}
