@@ -27,7 +27,7 @@ const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const rad = d => d * Math.PI / 180, deg = r => r * 180 / Math.PI;
 const uid = () => 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => { const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 3 | 8)).toString(16); });
 const money = n => Math.round(n).toLocaleString('en-IN');
-const priceHTML = n => `<small>Rs.</small>${money(n)}`;
+const priceHTML = n => `<small>₹</small>${money(n)}`;
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 function rng(seed) { let a = seed >>> 0; return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
 const hexRGB = hex => { const n = parseInt(hex.slice(1), 16); return [n >> 16 & 255, n >> 8 & 255, n & 255]; };
@@ -1008,7 +1008,7 @@ function refreshWarnings() { const r = computeWarnings(); warnCache = r.bad; okC
 /* totals */
 const totalPrice = () => S.items.reduce((s, it) => s + priceOf(it), 0);
 function refreshTotals() {
-  $('#total').innerHTML = `Rs.<b>${money(totalPrice())}</b>`;
+  $('#total').innerHTML = `₹<b>${money(totalPrice())}</b>`;
   $('#btn-summary').disabled = !S.items.length;
 }
 

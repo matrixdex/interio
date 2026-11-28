@@ -74,7 +74,7 @@ const runClaude = (system, user) => new Promise(res => {
   await Promise.all(Array.from({ length: PAR }, worker));
   const keep = done.filter(d => !d.rejected).slice(0, COUNT);
   const body = keep.map(e => JSON.stringify(e)).join(',\n');
-  fs.writeFileSync(path.join(ROOT, 'designs', 'gallery.js'), `/* Plinthel design collection: ${keep.length} kitchens written by Claude in KDL (see tools/generate-collection.js).\n   Each entry: { type, w, d (cm), must[], mood, cooking, people, budget (lakh), price (Rs), kdl } */\nwindow.INTERIO_GALLERY = [\n${body}\n];\n`);
+  fs.writeFileSync(path.join(ROOT, 'designs', 'gallery.js'), `/* Plinthel design collection: ${keep.length} kitchens written by Claude in KDL (see tools/generate-collection.js).\n   Each entry: { type, w, d (cm), must[], mood, cooking, people, budget (lakh), price (₹), kdl } */\nwindow.INTERIO_GALLERY = [\n${body}\n];\n`);
   console.log(`wrote designs/gallery.js · ${keep.length} designs · ${done.filter(d => d.rejected).length} rejected · ${((Date.now() - t0) / 1000).toFixed(0)} s`);
   await browser.close();
 })();
